@@ -32,7 +32,7 @@
                             {% if item.section != mobile_nav.last_section and item.section in ('administration', 'management') %}
                                 <div class="nav-divider">{{ 'Администрация' if item.section == 'administration' else 'Управление' }}</div>
                             {% endif %}
-                            <a href="{{ item.href }}" class="nav-link {% if item.active == 'true' %}is-active{% endif %}">
+                            <a href="{{ item.href }}" class="nav-link {% if item.active == 'true' %}is-active{% endif %} {% if item.badge %}has-badge{% endif %}">
                                 <span class="nav-link-label">{{ item.title }}</span>
                                 {% if item.badge %}
                                     <span class="nav-badge" aria-label="В ожидании: {{ item.badge }}"><span class="nav-badge-value">+{{ item.badge }}</span></span>
@@ -63,7 +63,7 @@
                         {% if item.section != desktop_nav.last_section and item.section in ('administration', 'management') %}
                             <div class="nav-divider">{{ 'Администрация' if item.section == 'administration' else 'Управление' }}</div>
                         {% endif %}
-                        <a href="{{ item.href }}" class="nav-link {% if item.active == 'true' %}is-active{% endif %}">
+                        <a href="{{ item.href }}" class="nav-link {% if item.active == 'true' %}is-active{% endif %} {% if item.badge %}has-badge{% endif %}">
                             <span class="nav-link-label">{{ item.title }}</span>
                             {% if item.badge %}
                                 <span class="nav-badge" aria-label="В ожидании: {{ item.badge }}"><span class="nav-badge-value">+{{ item.badge }}</span></span>
