@@ -58,6 +58,11 @@ from db import (
 router: Router = Router()
 
 
+async def answer_callback(event: CallbackQuery | Message) -> None:
+    if getattr(event, "data", None) is not None:
+        await event.answer()
+
+
 @router.message(Command("id"), F.chat.type == "private")
 async def id(message: Message, state: FSMContext):
     await message.delete()
@@ -882,7 +887,7 @@ async def reports(query: CallbackQuery, state: FSMContext):
 @router.message(Command("ld"), F.chat.type == "private")
 @router.callback_query(keyboard.Callback.filter(F.type == "leaderscontrol"))
 async def leaderscontrol(query: CallbackQuery, state: FSMContext):
-    await query.answer()
+    await answer_callback(query)
     user = Users.get_or_none(Users.telegram_id == query.from_user.id)
     if not user or user.role not in (
         "Главный за лидерами",
@@ -907,7 +912,7 @@ async def leaderscontrol(query: CallbackQuery, state: FSMContext):
 @router.message(Command("adm"), F.chat.type == "private")
 @router.callback_query(keyboard.Callback.filter(F.type == "adminscontrol"))
 async def adminscontrol(query: CallbackQuery, state: FSMContext):
-    await query.answer()
+    await answer_callback(query)
     user = Users.get_or_none(Users.telegram_id == query.from_user.id)
     if not user or user.role not in (
         "Куратор администрации",
@@ -980,7 +985,7 @@ async def createform(query: CallbackQuery, state: FSMContext):
 @router.message(Command("ap"), F.chat.type == "private")
 @router.callback_query(keyboard.Callback.filter(F.type == "supportcontrol"))
 async def supportcontrol(query: CallbackQuery, state: FSMContext):
-    await query.answer()
+    await answer_callback(query)
     user = Users.get_or_none(Users.telegram_id == query.from_user.id)
     if not user or (
         user.role
@@ -1120,7 +1125,7 @@ async def appointcheck(query: CallbackQuery, state: FSMContext):
             "age": datetime.strptime(sdata[2], "%d.%m.%Y").timestamp(),
             "city": sdata[3],
             "discord_id": int(sdata[4]),
-            "telegram_id": int(sdata[7]),   
+            "telegram_id": int(sdata[7]),
             "forum": sdata[6],
             "vk": sdata[5],
         },
@@ -2128,7 +2133,7 @@ async def strctrstats(query: CallbackQuery, state: FSMContext):
 @router.message(Command("sc"), F.chat.type == "private")
 @router.callback_query(keyboard.Callback.filter(F.type == "servercontrol"))
 async def servercontrol(query: CallbackQuery, state: FSMContext):
-    await query.answer()
+    await answer_callback(query)
     user = Users.get_or_none(Users.telegram_id == query.from_user.id)
     if not user or user.role not in (
         "Главный администратор",
@@ -3417,13 +3422,15 @@ async def usersinactiveset(message: Message, state: FSMContext):
 
     data = message.text.strip().replace(" - ", " ").split()
     try:
-        if len(data) != 3:
+        if len(data) not in (2, 3):
             raise ValueError
         user = Users.get_or_none(Users.nickname == data[0])
         if user is None:
             raise ValueError
         start = datetime.strptime(data[1], "%d.%m.%Y")
-        end = datetime.strptime(data[2], "%d.%m.%Y")
+        end = datetime.strptime(
+            data[2 if len(data) == 3 else 1], "%d.%m.%Y"
+        ) + timedelta(1)
         if start.timestamp() > end.timestamp():
             raise ValueError
     except Exception:
@@ -3554,7 +3561,7 @@ async def inactivestake(message: Message, state: FSMContext):
             raise ValueError
         start = datetime.strptime(data[0], "%d.%m.%Y")
         end = datetime.strptime(
-            data[1 if len(data) > 2 else 0], "%d.%m.%Y"
+            data[1 if len(data) == 2 else 0], "%d.%m.%Y"
         ) + timedelta(1)
         if start.timestamp() > end.timestamp():
             raise ValueError
