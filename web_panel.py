@@ -470,103 +470,52 @@ def count_actionable_punishment_requests_for_admins(admin_lookup: dict[str, User
     return len(pending_keys)
 
 
-def count_actionable_punishment_requests_for_user(user: Users) -> int:
-    active_types = {
-        punishment_type
-        for punishment_type in PUNISHMENT_LABELS
-        if int(getattr(user, punishment_type, 0) or 0) > 0
-    }
-    if not active_types:
-        return 0
-    pending_types = {
-        record.punishment
-        for record in (
-            PunishmentsRequests.select()
-            .where(
-                PunishmentsRequests.telegram_id == str(user.telegram_id),
-                PunishmentsRequests.status == "pending",
-                PunishmentsRequests.punishment << list(active_types),
-            )
-        )
-    }
-    return len(pending_types)
-
-
 def pending_menu_badges(user: Users) -> dict[str, int]:
     badges: dict[str, int] = {}
-    user_tgid = str(user.telegram_id)
+    if not can_access_admin_reviews(user):
+        return badges
 
-    own_inactives = (
-        InactiveRequests.select()
-        .where(
-            InactiveRequests.tgid == user_tgid,
-            InactiveRequests.status == "pending",
+    admin_users = list(Users.select().where(Users.role << ROLES))
+    admin_tgids = [admin.telegram_id for admin in admin_users]
+    admin_tgid_strings = [str(admin.telegram_id) for admin in admin_users]
+    admin_ids = [admin.id for admin in admin_users]
+    admin_lookup = {str(admin.telegram_id): admin for admin in admin_users}
+    if admin_tgid_strings:
+        admin_inactives = (
+            InactiveRequests.select()
+            .where(
+                InactiveRequests.tgid << admin_tgid_strings,
+                InactiveRequests.status == "pending",
+            )
+            .count()
         )
-        .count()
-    )
-    if own_inactives:
-        badges["inactives"] = own_inactives
-
-    if user.role in ROLES:
-        own_reports = Reports.select().where(Reports.user == user, Reports.status == "pending").count()
-        own_forms = (
+        if admin_inactives:
+            badges["administration_inactives"] = admin_inactives
+    if admin_tgids:
+        admin_forms = (
             Forms.select()
             .where(
-                Forms.fromtgid == user.telegram_id,
+                Forms.fromtgid << admin_tgids,
                 Forms.status == "pending",
             )
             .count()
         )
-        own_punishments = count_actionable_punishment_requests_for_user(user)
-        if own_reports:
-            badges["reports"] = own_reports
-        if own_forms:
-            badges["forms"] = own_forms
-        if own_punishments:
-            badges["punishments"] = own_punishments
-
-    if can_access_admin_reviews(user):
-        admin_users = list(Users.select().where(Users.role << ROLES))
-        admin_tgids = [admin.telegram_id for admin in admin_users]
-        admin_tgid_strings = [str(admin.telegram_id) for admin in admin_users]
-        admin_ids = [admin.id for admin in admin_users]
-        admin_lookup = {str(admin.telegram_id): admin for admin in admin_users}
-        if admin_tgid_strings:
-            admin_inactives = (
-                InactiveRequests.select()
-                .where(
-                    InactiveRequests.tgid << admin_tgid_strings,
-                    InactiveRequests.status == "pending",
-                )
-                .count()
+        if admin_forms:
+            badges["administration_forms"] = admin_forms
+    if admin_ids:
+        admin_reports = (
+            Reports.select()
+            .where(
+                Reports.user_id << admin_ids,
+                Reports.status == "pending",
             )
-            if admin_inactives:
-                badges["administration_inactives"] = admin_inactives
-        if admin_tgids:
-            admin_forms = (
-                Forms.select()
-                .where(
-                    Forms.fromtgid << admin_tgids,
-                    Forms.status == "pending",
-                )
-                .count()
-            )
-            if admin_forms:
-                badges["administration_forms"] = admin_forms
-        if admin_ids:
-            admin_reports = (
-                Reports.select()
-                .where(
-                    Reports.user_id << admin_ids,
-                    Reports.status == "pending",
-                )
-                .count()
-            )
-            if admin_reports:
-                badges["administration_reports"] = admin_reports
-        admin_punishments = count_actionable_punishment_requests_for_admins(admin_lookup)
-        if admin_punishments:
-            badges["administration_punishments"] = admin_punishments
+            .count()
+        )
+        if admin_reports:
+            badges["administration_reports"] = admin_reports
+    admin_punishments = count_actionable_punishment_requests_for_admins(admin_lookup)
+    if admin_punishments:
+        badges["administration_punishments"] = admin_punishments
 
     return badges
 
