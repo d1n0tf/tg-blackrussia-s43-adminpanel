@@ -35,7 +35,7 @@
                             <a href="{{ item.href }}" class="nav-link {% if item.active == 'true' %}is-active{% endif %}">
                                 <span class="nav-link-label">{{ item.title }}</span>
                                 {% if item.badge %}
-                                    <span class="nav-badge" aria-label="В ожидании: {{ item.badge }}">+{{ item.badge }}</span>
+                                    <span class="nav-badge" aria-label="В ожидании: {{ item.badge }}"><span class="nav-badge-value">+{{ item.badge }}</span></span>
                                 {% endif %}
                             </a>
                             {% set mobile_nav.last_section = item.section %}
@@ -66,7 +66,7 @@
                         <a href="{{ item.href }}" class="nav-link {% if item.active == 'true' %}is-active{% endif %}">
                             <span class="nav-link-label">{{ item.title }}</span>
                             {% if item.badge %}
-                                <span class="nav-badge" aria-label="В ожидании: {{ item.badge }}">+{{ item.badge }}</span>
+                                <span class="nav-badge" aria-label="В ожидании: {{ item.badge }}"><span class="nav-badge-value">+{{ item.badge }}</span></span>
                             {% endif %}
                         </a>
                         {% set desktop_nav.last_section = item.section %}
