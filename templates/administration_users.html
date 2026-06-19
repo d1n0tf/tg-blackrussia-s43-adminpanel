@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel-card">
+    <div class="section-head">
+        <h3>СПИСОК АДМИНИСТРАЦИИ СЕРВЕРА</h3>
+        <button type="button" class="button button-primary review-trigger admin-create-trigger" data-review-toggle="admin-user-create" aria-expanded="false">Добавить администратора</button>
+    </div>
+    <div data-review-panel="admin-user-create" data-live-key="admin-user-create" hidden>
+        <div class="review-body review-body-wide">
+            <form method="post" action="{{ request.url_for('administration_create_user') }}" class="stack-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="split-fields">
+                    <label><span>Ник</span><input type="text" name="nickname" required></label>
+                    <label>
+                        <span>Должность</span>
+                        <select name="role_value" required>
+                            {% for role in role_options %}
+                                <option value="{{ role }}">{{ role }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                </div>
+                <div class="split-fields">
+                    <label><span>Имя</span><input type="text" name="name" required></label>
+                    <label><span>Дата рождения</span><input type="date" name="birth_date" required></label>
+                </div>
+                <label><span>Город</span><input type="text" name="city" required></label>
+                <div class="split-fields">
+                    <label><span>Discord ID</span><input type="text" name="discord_id"></label>
+                    <label><span>Telegram ID</span><input type="text" name="telegram_id" required></label>
+                </div>
+                <div class="split-fields">
+                    <label><span>ВКонтакте</span><input type="text" name="vk"></label>
+                    <label><span>Форум</span><input type="text" name="forum"></label>
+                </div>
+                <button type="submit" class="button button-primary">Создать ссылку</button>
+            </form>
+        </div>
+    </div>
+</section>
+
+<section class="panel-card">
+    {% if rows %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>№</th>
+                        <th>Ник</th>
+                        <th>Должность</th>
+                        <th>Назначен</th>
+                        <th>Последнее повышение</th>
+                        <th>Ответы</th>
+                        <th>Наказания</th>
+                        <th>Кем назначен</th>
+                        <th>Управление</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        {% set item = row.user %}
+                        {% set card = row.card %}
+                        {% set is_open = selected_user_id == item.id and card is not none %}
+                        <tr id="admin-user-{{ item.id }}">
+                            <td data-label="№">{{ loop.index }}</td>
+                            <td data-label="Ник">{{ item.nickname }}</td>
+                            <td data-label="Должность"><span class="{{ role_tone_class(item.role) }}">{{ item.role }}</span></td>
+                            <td data-label="Назначен">{{ item.appointed|datetime_display }}</td>
+                            <td data-label="Последнее повышение">{{ item.promoted|datetime_display }}</td>
+                            <td data-label="Ответы">{{ item.apa }}</td>
+                            <td data-label="Наказания">{{ item.rebuke }} \ {{ item.warn }} \ {{ item.verbal }}</td>
+                            <td data-label="Кем назначен">{{ row.appointed_by }}</td>
+                            <td data-label="Управление">
+                                <a href="{{ request.url_for('administration_users_page') }}{% if not is_open %}?user_id={{ item.id }}{% endif %}" class="button button-secondary summary-button {% if is_open %}is-open{% endif %}">Управление</a>
+                            </td>
+                        </tr>
+                        {% if is_open %}
+                            <tr class="review-panel-row">
+                                <td colspan="9" class="review-panel-cell">
+                                    <div class="review-body review-body-wide">
+                                        <div class="info-grid">
+                                            <div><span>Ник</span> <strong>{{ card.nickname }}</strong></div>
+                                            <div><span>Должность</span> <strong class="{{ card.role_tone_class }}">{{ card.role }}</strong></div>
+                                            <div><span>Назначен</span> <strong>{{ card.appointed }}</strong></div>
+                                            <div><span>Последнее повышение</span> <strong>{{ card.promoted }}</strong></div>
+                                            <div><span>Кем назначен</span> <strong>{{ row.appointed_by }}</strong></div>
+                                            <div><span>Возраст</span> <strong>{{ card.age_text }} · {{ card.birth_date }}</strong></div>
+                                            <div><span>Город</span> <strong>{{ card.city }}</strong></div>
+                                            <div><span>Количество ответов</span> <strong>{{ card.apa_text }}</strong></div>
+                                            <div><span>Количество монеток</span> <strong>{{ card.coins_text }}</strong></div>
+                                            <div><span>Дней выполненного норматива</span> <strong>{{ card.days_left_value }}</strong></div>
+                                            <div><span>Дней в неактиве</span> <strong>{{ card.inactive_total_days_text }}</strong></div>
+                                            <div><span>Наказания</span> <strong>{{ card.rebuke }} / {{ card.warn }} / {{ card.verbal }}</strong></div>
+                                            <div><span>Discord</span> <strong>{{ card.discord_id or "—" }}</strong></div>
+                                            <div><span>Telegram</span> <strong>{{ card.telegram_id or "—" }}</strong></div>
+                                            <div><span>ВКонтакте</span> <strong>{{ card.vk or "—" }}</strong></div>
+                                            <div><span>Форум</span> <strong>{{ card.forum or "—" }}</strong></div>
+                                        </div>
+                                        {% if card.current_inactive %}
+                                            <article class="panel-subcard">
+                                                <h4>Действующий неактив</h4>
+                                                <div class="info-grid">
+                                                    <div><span>Период</span> <strong>{{ card.current_inactive.start }} по {{ card.current_inactive.end }}</strong></div>
+                                                    <div><span>Одобрил</span> <strong>{{ card.current_inactive.approved_by }}</strong></div>
+                                                    <div><span>Причина</span> <strong>{{ card.current_inactive.reason or "Не указана" }}</strong></div>
+                                                </div>
+                                            </article>
+                                        {% endif %}
+                                        <div class="grid admin-user-actions-grid">
+                                            <form method="post" action="{{ request.url_for('administration_update_user', user_id=item.id) }}" class="panel-subform">
+                                                <h4>Изменить информацию</h4>
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                                <div class="split-fields">
+                                                    <label><span>Ник</span><input type="text" name="nickname" value="{{ item.nickname }}" required></label>
+                                                    <label>
+                                                        <span>Должность</span>
+                                                        <select name="role_value" required>
+                                                            {% for role in role_options %}
+                                                                <option value="{{ role }}" {% if item.role == role %}selected{% endif %}>{{ role }}</option>
+                                                            {% endfor %}
+                                                        </select>
+                                                    </label>
+                                                </div>
+                                                <div class="split-fields">
+                                                    <label><span>Имя</span><input type="text" name="name" value="{{ item.name }}" required></label>
+                                                    <label><span>Дата рождения</span><input type="date" name="birth_date" value="{{ item.age|datetime_to_input }}" required></label>
+                                                </div>
+                                                <label><span>Город</span><input type="text" name="city" value="{{ item.city }}" required></label>
+                                                <div class="split-fields">
+                                                    <label><span>Discord ID</span><input type="text" name="discord_id" value="{{ item.discord_id if item.discord_id else '' }}"></label>
+                                                    <label><span>Telegram ID</span><input type="text" name="telegram_id" value="{{ item.telegram_id if item.telegram_id else '' }}" required></label>
+                                                </div>
+                                                <div class="split-fields">
+                                                    <label><span>ВКонтакте</span><input type="text" name="vk" value="{{ item.vk }}"></label>
+                                                    <label><span>Форум</span><input type="text" name="forum" value="{{ item.forum }}"></label>
+                                                </div>
+                                                <div class="split-fields">
+                                                    <label><span>Ответы</span><input type="number" name="apa" min="0" value="{{ item.apa }}" required></label>
+                                                    <label><span>Дни норматива</span><input type="number" name="objective_completed" min="0" value="{{ item.objective_completed or 0 }}" required></label>
+                                                </div>
+                                                <div class="split-fields">
+                                                    <label><span>Выговоры</span><input type="number" name="rebuke" min="0" value="{{ item.rebuke }}" required></label>
+                                                    <label><span>Предупреждения</span><input type="number" name="warn" min="0" value="{{ item.warn }}" required></label>
+                                                </div>
+                                                <label><span>Устники</span><input type="number" name="verbal" min="0" value="{{ item.verbal }}" required></label>
+                                                <button type="submit" class="button button-primary">Сохранить</button>
+                                            </form>
+                                            <form method="post" action="{{ request.url_for('administration_dismiss_user', user_id=item.id) }}" class="panel-subform dismiss-user-form">
+                                                <h4>Снять с должности</h4>
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                                <label>
+                                                    <span>Причина снятия</span>
+                                                    <textarea name="reason" rows="4" required></textarea>
+                                                </label>
+                                                <button type="submit" class="button button-danger">Снять администратора</button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">Администрации пока нет.</p>
+    {% endif %}
+</section>
+{% endblock %}

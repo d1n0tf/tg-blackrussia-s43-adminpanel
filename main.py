@@ -1,28 +1,19 @@
-import asyncio
+import os
 import sys
-import traceback
 
+import uvicorn
 from loguru import logger
 
-from db import Model, dbhandle
+from web_panel import app
+
+logger.remove()
+logger.add(sys.stderr, level=os.getenv("LOG_LEVEL", "INFO"))
+
 
 if __name__ == "__main__":
-    logger.remove()
-    logger.add(sys.stderr, level="DEBUG")
-
-    logger.info("Starting...")
-
-    logger.info("Creating tables...")
-    dbhandle.create_tables(Model.__subclasses__())
-    from Bot import Bot, sheets
-
-    logger.info("Refilling sheets...")
-    sheets.main(True, True, True)
-
-    logger.info("Starting the bot...")
-    try:
-        asyncio.run(Bot().run())
-    except KeyboardInterrupt:
-        logger.info("Stopped by user (KeyboardInterrupt).")
-    except Exception:
-        logger.critical(traceback.format_exc())
+    uvicorn.run(
+        "main:app",
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", "8000")),
+        reload=os.getenv("RELOAD") == "1",
+    )

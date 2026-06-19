@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel-card">
+    <h3>СИСТЕМА НЕАКТИВОВ АДМИНИСТРАЦИИ</h3>
+    <p class="section-copy">Статистика</p>
+    <div class="hero-metrics">
+        <div class="metric-pill">
+            <span>Администрации в неактиве</span>
+            <strong>{{ admins_inactive_count }}</strong>
+        </div>
+        <div class="metric-pill">
+            <span>Заявлений в ожидании</span>
+            <strong>{{ pending_total }}</strong>
+        </div>
+    </div>
+</section>
+
+<section class="panel-card">
+    <div class="section-head">
+        <h3>ЗАЯВЛЕНИЯ НА НЕАКТИВ</h3>
+        <span>Страница {{ pending_page }}</span>
+    </div>
+    {% if pending_rows %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Ник</th>
+                        <th>Причина</th>
+                        <th>Дата начала</th>
+                        <th>Дата конца</th>
+                        <th>Дней всего</th>
+                        <th>Ответов</th>
+                        <th>Рассмотреть</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in pending_rows %}
+                        <tr>
+                            <td data-label="ID">{{ row.id }}</td>
+                            <td data-label="Ник">{{ row.owner.nickname }}</td>
+                            <td data-label="Причина">{{ row.reason }}</td>
+                            <td data-label="Дата начала">{{ row.start }}</td>
+                            <td data-label="Дата конца">{{ row.end }}</td>
+                            <td data-label="Дней всего">{{ row.total_days_text }}</td>
+                            <td data-label="Ответов">{{ row.answers }}</td>
+                            <td data-label="Рассмотреть">
+                                <button type="button" class="button button-secondary summary-button review-trigger" data-review-toggle="admin-inactive-request-{{ row.id }}" aria-expanded="false">Рассмотреть</button>
+                            </td>
+                        </tr>
+                        <tr class="review-panel-row" data-review-panel="admin-inactive-request-{{ row.id }}" data-live-key="admin-inactive-request-{{ row.id }}" hidden>
+                            <td colspan="8" class="review-panel-cell">
+                                <div class="review-body review-body-wide">
+                                    <div class="review-copy">
+                                        <p><strong>Ник:</strong> {{ row.owner.nickname }}</p>
+                                        <p><strong>Период:</strong> {{ row.start }} → {{ row.end }}</p>
+                                        <p><strong>Дней всего:</strong> {{ row.total_days_text }}</p>
+                                        <p><strong>Ответов сейчас:</strong> {{ row.answers }}</p>
+                                        <p><strong>Снимется при одобрении:</strong> {{ row.penalty }}</p>
+                                    </div>
+                                    <form method="post" action="{{ request.url_for('review_inactive_request', scope='admins', request_id=row.id) }}" class="stack-form">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <label>
+                                            <span>Комментарий или причина отказа</span>
+                                            <textarea name="comment" rows="3" placeholder="При отказе укажите причину, при одобрении можно оставить заметку"></textarea>
+                                        </label>
+                                        <div class="review-actions">
+                                            <button type="submit" name="decision" value="reject" class="button button-danger">Отменить</button>
+                                            <button type="submit" name="decision" value="approve_no_metric" class="button button-secondary">Одобрить (без ответов)</button>
+                                            <button type="submit" name="decision" value="approve_with_metric" class="button button-primary">Одобрить (с ответами)</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="pager">
+            {% if pending_page > 1 %}
+                <a href="{{ query_with(pending_page=pending_page - 1) }}" class="button button-secondary">Назад</a>
+            {% endif %}
+            {% if pending_has_next %}
+                <a href="{{ query_with(pending_page=pending_page + 1) }}" class="button button-secondary">Дальше</a>
+            {% endif %}
+        </div>
+    {% else %}
+        <p class="empty-state">Заявлений на неактив сейчас нет.</p>
+    {% endif %}
+</section>
+
+<section class="panel-card">
+    <div class="section-head">
+        <h3>ДЕЙСТВУЮЩИЕ НЕАКТИВЫ</h3>
+        <span>Страница {{ active_list_page }}</span>
+    </div>
+    {% if active_rows %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Ник</th>
+                        <th>Дата начала</th>
+                        <th>Дата конца</th>
+                        <th>Причина</th>
+                        <th>Статус</th>
+                        <th>Одобрил</th>
+                        <th>Одобрил когда</th>
+                        <th>Изменить</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in active_rows %}
+                        <tr>
+                            <td data-label="ID">{{ row.id }}</td>
+                            <td data-label="Ник">{{ row.nickname }}</td>
+                            <td data-label="Дата начала">{{ row.start }}</td>
+                            <td data-label="Дата конца">{{ row.end }}</td>
+                            <td data-label="Причина">{{ row.reason }}</td>
+                            <td data-label="Статус">{{ row.status }}</td>
+                            <td data-label="Одобрил">{{ row.processed_by }}</td>
+                            <td data-label="Одобрил когда">{{ row.approved_at }}</td>
+                            <td data-label="Изменить">
+                                <button type="button" class="button button-secondary summary-button review-trigger" data-review-toggle="admin-active-inactive-{{ row.id }}" aria-expanded="false">Изменить</button>
+                            </td>
+                        </tr>
+                        <tr class="review-panel-row" data-review-panel="admin-active-inactive-{{ row.id }}" data-live-key="admin-active-inactive-{{ row.id }}" hidden>
+                            <td colspan="9" class="review-panel-cell">
+                                <div class="review-body review-body-wide">
+                                    <div class="review-copy">
+                                        <p><strong>Ник:</strong> {{ row.nickname }}</p>
+                                        <p><strong>Текущий срок:</strong> {{ row.start }} → {{ row.end }}</p>
+                                        <p><strong>Причина:</strong> {{ row.reason }}</p>
+                                        <p><strong>Снято ответов:</strong> {{ row.penalty_amount or 0 }}</p>
+                                    </div>
+                                    <form method="post" action="{{ request.url_for('administration_update_inactive', inactive_id=row.id) }}" class="stack-form">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <div class="split-fields">
+                                            <label>
+                                                <span>Дата начала</span>
+                                                <input type="date" name="start_date" value="{{ row.start_input }}" required>
+                                            </label>
+                                            <label>
+                                                <span>Дата конца</span>
+                                                <input type="date" name="end_date" value="{{ row.end_input }}" required>
+                                            </label>
+                                        </div>
+                                        <label>
+                                            <span>Причина</span>
+                                            <textarea name="reason" rows="3" required>{{ row.reason }}</textarea>
+                                        </label>
+                                        <button type="submit" class="button button-primary">Сохранить изменения</button>
+                                    </form>
+                                    <form method="post" action="{{ request.url_for('administration_delete_inactive', inactive_id=row.id) }}" class="stack-form">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <button type="submit" class="button button-danger">Удалить неактив полностью</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="pager">
+            {% if active_list_page > 1 %}
+                <a href="{{ query_with(active_page=active_list_page - 1) }}" class="button button-secondary">Назад</a>
+            {% endif %}
+            {% if active_has_next %}
+                <a href="{{ query_with(active_page=active_list_page + 1) }}" class="button button-secondary">Дальше</a>
+            {% endif %}
+        </div>
+    {% else %}
+        <p class="empty-state">Действующих неактивов нет.</p>
+    {% endif %}
+</section>
+
+<section class="panel-card">
+    <div class="section-head">
+        <h3>ИСТОРИЯ НЕАКТИВОВ</h3>
+        <span>Страница {{ history_page }}</span>
+    </div>
+    {% if history_rows %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Ник</th>
+                        <th>Дата начала</th>
+                        <th>Дата конца</th>
+                        <th>Причина</th>
+                        <th>Статус</th>
+                        <th>Одобрил</th>
+                        <th>Одобрил когда</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in history_rows %}
+                        <tr>
+                            <td data-label="ID">{{ row.id }}</td>
+                            <td data-label="Ник">{{ row.nickname }}</td>
+                            <td data-label="Дата начала">{{ row.start }}</td>
+                            <td data-label="Дата конца">{{ row.end }}</td>
+                            <td data-label="Причина">
+                                {{ row.reason }}
+                                {% if row.process_comment %}
+                                    <br>
+                                    <span class="muted-copy">Комментарий: {{ row.process_comment }}</span>
+                                {% endif %}
+                            </td>
+                            <td data-label="Статус">{{ row.status }}</td>
+                            <td data-label="Одобрил">{{ row.processed_by }}</td>
+                            <td data-label="Одобрил когда">{{ row.approved_at }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="pager">
+            {% if history_page > 1 %}
+                <a href="{{ query_with(history_page=history_page - 1) }}" class="button button-secondary">Назад</a>
+            {% endif %}
+            {% if history_has_next %}
+                <a href="{{ query_with(history_page=history_page + 1) }}" class="button button-secondary">Дальше</a>
+            {% endif %}
+        </div>
+    {% else %}
+        <p class="empty-state">История пока пустая.</p>
+    {% endif %}
+</section>
+{% endblock %}

@@ -1120,7 +1120,7 @@ async def appointcheck(query: CallbackQuery, state: FSMContext):
             "age": datetime.strptime(sdata[2], "%d.%m.%Y").timestamp(),
             "city": sdata[3],
             "discord_id": int(sdata[4]),
-            "telegram_id": int(sdata[7]),
+            "telegram_id": int(sdata[7]),   
             "forum": sdata[6],
             "vk": sdata[5],
         },

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block auth_content %}
+<section class="auth-card">
+    <div class="auth-copy">
+        <span class="eyebrow">Авторизация</span>
+        <h1>Вход в админ-панель</h1>
+        <p>Логин — ваш игровой никнейм. Пароль устанавливается по одноразовой ссылке, которую выдаёт главный администратор.</p>
+    </div>
+    <form method="post" action="{{ request.url_for('login_action') }}" class="stack-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>
+            <span>Никнейм</span>
+            <input type="text" name="nickname" placeholder="Andrey_Mal" required>
+        </label>
+        <label>
+            <span>Пароль</span>
+            <input type="password" name="password" placeholder="Введите пароль" required>
+        </label>
+        <button type="submit" class="button button-primary">Войти</button>
+    </form>
+</section>
+{% endblock %}

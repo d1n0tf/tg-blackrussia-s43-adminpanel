@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid two-cols">
+    <article class="panel-card">
+        <h3>Создать форму</h3>
+        <form method="post" action="{{ request.url_for('create_form_request') }}" class="stack-form" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>
+                <span>Команда формы</span>
+                <textarea name="form_text" rows="4" placeholder="/ban Nick 7 Причина" required></textarea>
+            </label>
+            <label>
+                <span>Ссылки на доказательства</span>
+                <textarea name="proof_links" rows="3" placeholder="Можно вставить несколько ссылок через пробел или запятую"></textarea>
+            </label>
+            <label>
+                <span>Файлы-доказательства</span>
+                <input type="file" name="proof_files" multiple>
+            </label>
+            <button type="submit" class="button button-primary">Отправить форму</button>
+        </form>
+    </article>
+
+    <article class="panel-card">
+        <h3>Правило</h3>
+        <div class="callout">
+            <p>Для формы нужен хотя бы один пруф: ссылка или файл. История ниже хранится прямо в панели, без привязки к Telegram-тредам.</p>
+        </div>
+    </article>
+</section>
+
+<section class="panel-card">
+    <div class="section-head">
+        <h3>История форм</h3>
+        <span>Страница {{ history_page }}</span>
+    </div>
+    {% if rows %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Форма</th>
+                        <th>Доказательства</th>
+                        <th>Статус</th>
+                        <th>Проверил</th>
+                        <th>Комментарий</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            <td data-label="ID">{{ row.id }}</td>
+                            <td data-label="Форма"><code>{{ row.form }}</code></td>
+                            <td data-label="Доказательства">
+                                <div class="proof-list">
+                                    {% for item in row.proofs %}
+                                        <div class="proof-item">
+                                            {% if item.type == 'file' %}
+                                                {% set file_href = request.url_for('download_attachment', entity='form', record_id=row.id, index=loop.index0) %}
+                                                <strong class="proof-name">{{ item.name }}</strong>
+                                                <div class="proof-actions">
+                                                    {% if item.is_image %}
+                                                        <a href="{{ file_href }}?mode=view" target="_blank" rel="noopener noreferrer">Открыть</a>
+                                                    {% endif %}
+                                                    <a href="{{ file_href }}">Скачать</a>
+                                                </div>
+                                            {% else %}
+                                                <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.name }}</a>
+                                            {% endif %}
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            </td>
+                            <td data-label="Статус">{{ status_label.get(row.status, row.status) }}</td>
+                            <td data-label="Проверил">{{ row.processed_by }}</td>
+                            <td data-label="Комментарий">{{ row.result }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="pager">
+            {% if history_page > 1 %}
+                <a href="{{ query_with(history_page=history_page - 1) }}" class="button button-secondary">Назад</a>
+            {% endif %}
+            {% if history_has_next %}
+                <a href="{{ query_with(history_page=history_page + 1) }}" class="button button-secondary">Дальше</a>
+            {% endif %}
+        </div>
+    {% else %}
+        <p class="empty-state">История пока пустая.</p>
+    {% endif %}
+</section>
+{% endblock %}

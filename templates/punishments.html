@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid two-cols">
+    <article class="panel-card">
+        <h3>Действующие наказания</h3>
+        {% if active_rows %}
+            <div class="table-list">
+                {% for row in active_rows %}
+                    <div class="table-item">
+                        <div class="punishment-item-copy">
+                            <strong>{{ row.type }}</strong>
+                            <span>{{ row.reason }}</span>
+                        </div>
+                        {% if not row.legacy %}
+                            <span>{{ row.issued_at }}</span>
+                        {% endif %}
+                        {% if row.pending_request %}
+                            <button type="button" class="button button-secondary" disabled>Заявка уже отправлена</button>
+                        {% else %}
+                            <form method="post" action="{{ request.url_for('create_punishment_request') }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="punishment_type" value="{{ row.type_key }}">
+                                <button type="submit" class="button button-secondary">Запросить снятие</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="empty-state">Активных наказаний нет.</p>
+        {% endif %}
+    </article>
+
+    <article class="panel-card">
+        <div class="section-head">
+            <h3>Мои заявки</h3>
+            <span>Страница {{ requests_page }}</span>
+        </div>
+        {% if request_rows %}
+            <div class="table-list">
+                {% for row in request_rows %}
+                    <div class="table-item">
+                        <strong>{{ row.punishment_type }}</strong>
+                        <span>{{ status_label.get(row.status, row.status) }}</span>
+                        <span>{{ row.processed_by }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+            <div class="pager">
+                {% if requests_page > 1 %}
+                    <a href="{{ query_with(requests_page=requests_page - 1) }}" class="button button-secondary">Назад</a>
+                {% endif %}
+                {% if requests_has_next %}
+                    <a href="{{ query_with(requests_page=requests_page + 1) }}" class="button button-secondary">Дальше</a>
+                {% endif %}
+            </div>
+        {% else %}
+            <p class="empty-state">Заявок на рассмотрении нет.</p>
+        {% endif %}
+    </article>
+</section>
+
+<section class="panel-card">
+    <div class="section-head">
+        <h3>История наказаний</h3>
+        <span>Страница {{ history_page }}</span>
+    </div>
+    {% if history_rows %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Тип</th>
+                        <th>Причина</th>
+                        <th>Выдал</th>
+                        <th>Дата выдачи</th>
+                        <th>Снято</th>
+                        <th>Кем снято</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in history_rows %}
+                        <tr>
+                            <td data-label="Тип">{{ row.type }}</td>
+                            <td data-label="Причина">{{ row.reason }}</td>
+                            <td data-label="Выдал">{{ row.issued_by }}</td>
+                            <td data-label="Дата выдачи">{{ row.issued_at }}</td>
+                            <td data-label="Снято">{{ row.removed_at }}</td>
+                            <td data-label="Кем снято">{{ row.removed_by }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="pager">
+            {% if history_page > 1 %}
+                <a href="{{ query_with(history_page=history_page - 1) }}" class="button button-secondary">Назад</a>
+            {% endif %}
+            {% if history_has_next %}
+                <a href="{{ query_with(history_page=history_page + 1) }}" class="button button-secondary">Дальше</a>
+            {% endif %}
+        </div>
+    {% else %}
+        <p class="empty-state">История пока пустая.</p>
+    {% endif %}
+</section>
+{% endblock %}

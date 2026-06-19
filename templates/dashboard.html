@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel-card dashboard-card">
+    <div class="dashboard-lines">
+        <div class="dashboard-line"><span>Ник:</span> <strong>{{ card.nickname }}</strong></div>
+        <div class="dashboard-line"><span>Должность:</span> <strong class="{{ card.role_tone_class }}">{{ card.role }}</strong></div>
+        {% if card.fraction %}
+            <div class="dashboard-line"><span>Фракция:</span> <strong>{{ card.fraction }}</strong></div>
+        {% endif %}
+        {% if card.structure %}
+            <div class="dashboard-line"><span>Структура:</span> <strong class="{{ card.structure_tone_class }}">{{ card.structure }}</strong></div>
+        {% endif %}
+        <div class="dashboard-line"><span>Назначен:</span> <strong>{{ card.appointed }}</strong></div>
+        <div class="dashboard-line"><span>Возраст:</span> <strong>{{ card.age_text }} \ {{ card.birth_date }}</strong></div>
+        <div class="dashboard-line"><span>Город:</span> <strong>{{ card.city }}</strong></div>
+    </div>
+</section>
+
+<section class="panel-card dashboard-card">
+    <h3>ПОДРОБНАЯ ИНФОРМАЦИЯ</h3>
+    <div class="dashboard-lines">
+        <div class="dashboard-line"><span>Дней на посту:</span> <strong>{{ card.appointed_days_text }}</strong></div>
+        <div class="dashboard-line"><span>{{ card.days_left_label }}:</span> <strong>{{ card.days_left_value }}</strong></div>
+        <div class="dashboard-line"><span>Дней в неактиве:</span> <strong>{{ card.inactive_total_days_text }}</strong></div>
+        <div class="dashboard-line"><span>{{ card.metric_total_label }}:</span> <strong>{{ card.apa_text }}</strong></div>
+        {% if card.scope == "admins" %}
+            <div class="dashboard-line"><span>Последнее повышение:</span> <strong>{{ card.promoted }}</strong></div>
+            <div class="dashboard-line"><span>Количество монеток:</span> <strong>{{ card.coins_text }}</strong></div>
+        {% endif %}
+    </div>
+</section>
+
+{% if card.current_inactive %}
+    <section class="panel-card dashboard-card">
+        <h3>НЕАКТИВЫ</h3>
+        <div class="dashboard-lines">
+            <div class="dashboard-line"><span>Действующий неактив с</span> <strong>{{ card.current_inactive.start }} по {{ card.current_inactive.end }}</strong></div>
+            <div class="dashboard-line"><span>Причина неактива:</span> <strong>{{ card.current_inactive.reason or "Не указана" }}</strong></div>
+            <div class="dashboard-line"><span>Одобрил:</span> <strong>{{ card.current_inactive.approved_by }}</strong></div>
+        </div>
+    </section>
+{% endif %}
+
+<section class="panel-card dashboard-card">
+    <h3>НАКАЗАНИЯ</h3>
+    <div class="dashboard-lines">
+        <div class="dashboard-line"><span>Количество выговоров:</span> <strong>{{ card.rebuke }}</strong></div>
+        <div class="dashboard-line"><span>Количество предупреждений:</span> <strong>{{ card.warn }}</strong></div>
+        <div class="dashboard-line"><span>Количество устников:</span> <strong>{{ card.verbal }}</strong></div>
+        <div class="dashboard-line">
+            <span>Последнее наказание:</span>
+            <strong>
+                {% if card.last_punishment %}
+                    {{ card.last_punishment.label }} | {{ card.last_punishment.date }}
+                {% else %}
+                    —
+                {% endif %}
+            </strong>
+        </div>
+        <div class="dashboard-line">
+            <span>Причина:</span>
+            <strong>{{ card.last_punishment.reason if card.last_punishment else "—" }}</strong>
+        </div>
+        <div class="dashboard-line">
+            <span>Выдано:</span>
+            <strong>{{ card.last_punishment.issued_by if card.last_punishment else "—" }}</strong>
+        </div>
+    </div>
+</section>
+
+<section class="panel-card dashboard-card">
+    <h3>КОНТАКТНАЯ ИНФОРМАЦИЯ</h3>
+    <div class="dashboard-lines">
+        <div class="dashboard-line">
+            <span>Discord:</span>
+            <div class="dashboard-copy">
+                <strong>{{ card.discord_id or "—" }}</strong>
+                {% if card.discord_id %}
+                    <button type="button" class="copy-inline" data-copy-value="{{ card.discord_id }}">Копировать</button>
+                    <span class="copy-feedback" data-copy-feedback aria-live="polite"></span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="dashboard-line">
+            <span>ВКонтакте:</span>
+            <div class="dashboard-copy">
+                <strong>
+                    {% if card.vk %}
+                        <a href="{{ card.vk }}" target="_blank" rel="noopener noreferrer">{{ card.vk }}</a>
+                    {% else %}
+                        —
+                    {% endif %}
+                </strong>
+                {% if card.vk %}
+                    <button type="button" class="copy-inline" data-copy-value="{{ card.vk }}">Копировать</button>
+                    <span class="copy-feedback" data-copy-feedback aria-live="polite"></span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="dashboard-line">
+            <span>Форум:</span>
+            <div class="dashboard-copy">
+                <strong>
+                    {% if card.forum %}
+                        <a href="{{ card.forum }}" target="_blank" rel="noopener noreferrer">{{ card.forum }}</a>
+                    {% else %}
+                        —
+                    {% endif %}
+                </strong>
+                {% if card.forum %}
+                    <button type="button" class="copy-inline" data-copy-value="{{ card.forum }}">Копировать</button>
+                    <span class="copy-feedback" data-copy-feedback aria-live="polite"></span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="dashboard-line">
+            <span>Telegram:</span>
+            <div class="dashboard-copy">
+                <strong>{{ card.telegram_id or "—" }}</strong>
+                {% if card.telegram_id %}
+                    <button type="button" class="copy-inline" data-copy-value="{{ card.telegram_id }}">Копировать</button>
+                    <span class="copy-feedback" data-copy-feedback aria-live="polite"></span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

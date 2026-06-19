@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid management-grid">
+    <article class="panel-card user-list-card">
+        <div class="section-head">
+            <h3>Состав сферы</h3>
+            <span>{{ users|length }} чел.</span>
+        </div>
+        <form method="get" action="{{ request.url_for('management_page', scope=scope) }}" class="inline-form">
+            <input type="text" name="search" value="{{ search }}" placeholder="Поиск по нику">
+            <button type="submit" class="button button-secondary">Найти</button>
+        </form>
+        <div class="stack-list scroll-list">
+            {% for item in users %}
+                <a href="{{ request.url_for('management_page', scope=scope) }}?user_id={{ item.id }}{% if search %}&search={{ search }}{% endif %}" class="stack-item {% if selected and selected.id == item.id %}is-selected{% endif %}">
+                    <strong>{{ item.nickname }}</strong>
+                    <span class="{{ role_tone_class(item.role) if item.role else '' }}">{% if item.fraction %}{{ item.fraction }}{% else %}{{ item.role }}{% endif %}</span>
+                </a>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="panel-card" id="selected-user-panel">
+        {% if selected and selected_card %}
+            <div class="section-head">
+                <h3>{{ selected.nickname }}</h3>
+                <span class="{{ selected_card.role_tone_class }}">{{ selected_card.role }}</span>
+            </div>
+            <div class="info-grid">
+                <div><span>Назначен</span> <strong>{{ selected_card.appointed }}</strong></div>
+                <div><span>{{ scope_metric_labels[scope] }}</span> <strong>{{ selected_card.apa }} {{ selected_card.apa_word }}</strong></div>
+                <div><span>Город</span> <strong>{{ selected_card.city }}</strong></div>
+                <div><span>Возраст</span> <strong>{{ selected_card.age_text }} · {{ selected_card.birth_date }}</strong></div>
+                <div><span>Telegram</span> <strong>{{ selected_card.telegram_id or "—" }}</strong></div>
+                <div><span>Discord</span> <strong>{{ selected_card.discord_id or "—" }}</strong></div>
+            </div>
+
+            <div class="grid two-cols">
+                <form method="post" action="{{ request.url_for('management_change_metric', scope=scope) }}" class="panel-subform">
+                    <h4>Изменить {{ scope_metric_action_labels[scope] }}</h4>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="user_id" value="{{ selected.id }}">
+                    <div class="split-fields">
+                        <label>
+                            <span>Операция</span>
+                            <select name="operation">
+                                <option value="+">Начислить</option>
+                                <option value="-">Снять</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span>Количество</span>
+                            <input type="number" name="amount" min="0" value="0" required>
+                        </label>
+                    </div>
+                    <button type="submit" class="button button-primary">Сохранить</button>
+                </form>
+
+                <form method="post" action="{{ request.url_for('management_add_punishment', scope=scope) }}" class="panel-subform">
+                    <h4>Выдать наказание</h4>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="user_id" value="{{ selected.id }}">
+                    <label>
+                        <span>Тип наказания</span>
+                        <select name="punishment_type">
+                            {% for key, label in punishment_labels.items() %}
+                                <option value="{{ key }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label>
+                        <span>Причина</span>
+                        <textarea name="reason" rows="3" required></textarea>
+                    </label>
+                    <button type="submit" class="button button-secondary">Выдать</button>
+                </form>
+            </div>
+
+            <div class="grid two-cols">
+                <form method="post" action="{{ request.url_for('management_set_inactive', scope=scope) }}" class="panel-subform">
+                    <h4>Выдать неактив</h4>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="user_id" value="{{ selected.id }}">
+                    <div class="split-fields">
+                        <label>
+                            <span>Дата начала</span>
+                            <input type="date" name="start_date" value="{{ today }}" required>
+                        </label>
+                        <label>
+                            <span>Дата конца</span>
+                            <input type="date" name="end_date" value="{{ today }}" required>
+                        </label>
+                    </div>
+                    <label>
+                        <span>Причина</span>
+                        <textarea name="reason" rows="3" required></textarea>
+                    </label>
+                    <button type="submit" class="button button-secondary">Выдать неактив</button>
+                </form>
+
+                <form method="post" action="{{ request.url_for('management_dismiss_user', scope=scope) }}" class="panel-subform">
+                    <h4>Снять с должности</h4>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="user_id" value="{{ selected.id }}">
+                    <label>
+                        <span>Причина</span>
+                        <textarea name="reason" rows="3" required></textarea>
+                    </label>
+                    <button type="submit" class="button button-danger">Снять пользователя</button>
+                </form>
+            </div>
+
+            {% if selected_card.current_inactive %}
+                <form method="post" action="{{ request.url_for('management_clear_inactive', scope=scope, user_id=selected.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="button button-secondary">Снять текущий неактив</button>
+                </form>
+            {% endif %}
+
+            <div class="grid two-cols">
+                <article class="panel-subcard">
+                    <h4>Активные наказания</h4>
+                    {% if selected_active_punishments %}
+                        <div class="table-list">
+                            {% for row in selected_active_punishments %}
+                                <div class="table-item">
+                                    <strong>{{ row.type }}</strong>
+                                    <span>{{ row.reason }}</span>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="empty-state">Нет активных наказаний.</p>
+                    {% endif %}
+                </article>
+                <article class="panel-subcard">
+                    <h4>История наказаний</h4>
+                    {% if selected_punishment_history %}
+                        <div class="table-list">
+                            {% for row in selected_punishment_history %}
+                                <div class="table-item">
+                                    <strong>{{ row.type }}</strong>
+                                    <span>{{ row.issued_at }}</span>
+                                    <span>{{ row.reason }}</span>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="empty-state">История пока пустая.</p>
+                    {% endif %}
+                </article>
+            </div>
+        {% else %}
+            <p class="empty-state">В этой сфере пока нет пользователей.</p>
+        {% endif %}
+    </article>
+</section>
+
+{% if scope != "admins" %}
+    <section class="panel-card">
+        <h3>Заявки на неактив</h3>
+        {% if pending_inactive_requests %}
+            <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Пользователь</th>
+                            <th>Период</th>
+                            <th>Причина</th>
+                            <th>{{ scope_metric_loss_labels[scope] }}</th>
+                            <th>Действие</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in pending_inactive_requests %}
+                            <tr>
+                                <td data-label="ID">{{ row.id }}</td>
+                                <td data-label="Пользователь">{{ row.owner.nickname }}</td>
+                                <td data-label="Период">{{ row.start }} → {{ row.end }}</td>
+                                <td data-label="Причина">{{ row.reason }}</td>
+                                <td data-label="{{ scope_metric_loss_labels[scope] }}">{{ row.penalty }}</td>
+                                <td data-label="Действие">
+                                    <form method="post" action="{{ request.url_for('review_inactive_request', scope=scope, request_id=row.id) }}" class="compact-review">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <input type="text" name="comment" placeholder="Комментарий">
+                                        <button type="submit" name="decision" value="approve" class="button button-primary">Одобрить</button>
+                                        <button type="submit" name="decision" value="reject" class="button button-danger">Отказать</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="empty-state">Ожидающих заявок нет.</p>
+        {% endif %}
+    </section>
+{% endif %}
+
+<section class="grid two-cols">
+    <article class="panel-card">
+        <h3>Последние неактивы</h3>
+        {% if recent_inactives %}
+            <div class="table-list">
+                {% for row in recent_inactives %}
+                    <div class="table-item">
+                        <strong>{{ row.nickname }}</strong>
+                        <span>{{ row.start }} → {{ row.end }}</span>
+                        <span>{{ row.status }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="empty-state">История пуста.</p>
+        {% endif %}
+    </article>
+
+    <article class="panel-card">
+        <h3>Последние снятия</h3>
+        {% if removed_rows %}
+            <div class="table-list">
+                {% for row in removed_rows %}
+                    <div class="table-item">
+                        <strong>{{ row.nickname }}</strong>
+                        <span>{{ row.reason }}</span>
+                        <span>{{ row.date }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="empty-state">Снятий пока нет.</p>
+        {% endif %}
+    </article>
+</section>
+{% endblock %}

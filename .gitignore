@@ -1,6 +1,8 @@
 .idea
 __pycache__
 .venv
+.uv-local
 config.ini
 credits.json
 tgbradminpanel
+storage/uploads

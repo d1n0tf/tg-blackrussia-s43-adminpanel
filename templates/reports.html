@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid two-cols">
+    <article class="panel-card">
+        <h3>Новый отчёт</h3>
+        <form method="post" action="{{ request.url_for('create_report') }}" class="stack-form" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="split-fields">
+                <label>
+                    <span>Тип</span>
+                    <select name="report_type" required>
+                        <option value="objective">Норматив</option>
+                        <option value="additional">Доп. ответы</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Дата</span>
+                    <input type="date" name="report_date" value="{{ today }}" required>
+                </label>
+            </div>
+            <label>
+                <span>Файлы или скриншоты</span>
+                <input type="file" name="attachments" id="report-attachments" multiple required>
+            </label>
+            <div class="paste-dropzone" tabindex="0" data-paste-target>
+                <strong>Вставьте изображение из буфера обмена</strong>
+                <p>Нажмите <kbd>Ctrl</kbd> + <kbd>V</kbd> или <kbd>Cmd</kbd> + <kbd>V</kbd> прямо на этой странице. Картинка автоматически прикрепится к отчёту.</p>
+            </div>
+            <div class="attachment-preview" data-attachment-preview hidden></div>
+            <button type="submit" class="button button-primary">Отправить отчёт</button>
+        </form>
+    </article>
+
+    <article class="panel-card">
+        <h3>Подсказка</h3>
+        <div class="callout">
+            <p>Для норматива можно прикреплять скриншот или набор файлов, а при проверке куратор укажет, сколько ответов зачесть и считать ли отчёт днём норматива.</p>
+        </div>
+    </article>
+</section>
+
+<section class="panel-card">
+    <div class="section-head">
+        <h3>История отчётов</h3>
+        <span>Страница {{ history_page }}</span>
+    </div>
+    {% if rows %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Дата</th>
+                        <th>Тип</th>
+                        <th>Файлы</th>
+                        <th>Статус</th>
+                        <th>Проверил</th>
+                        <th>Выданные ответы</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            <td data-label="ID">{{ row.id }}</td>
+                            <td data-label="Дата">
+                                {{ row.report_date }}
+                                <br>
+                                <span class="muted-copy">Отправлено: {{ row.created_at }}</span>
+                            </td>
+                            <td data-label="Тип">{{ row.type }}</td>
+                            <td data-label="Файлы">
+                                <div class="cell-links">
+                                    {% for item in row.attachments %}
+                                        <a href="{{ request.url_for('download_attachment', entity='report', record_id=row.id, index=loop.index0) }}">Файл {{ loop.index }}</a>
+                                    {% endfor %}
+                                </div>
+                            </td>
+                            <td data-label="Статус">{{ status_label.get(row.status, row.status) }}</td>
+                            <td data-label="Проверил">{{ row.checked_by }}</td>
+                            <td data-label="Выданные ответы">{{ row.result }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="pager">
+            {% if history_page > 1 %}
+                <a href="{{ query_with(history_page=history_page - 1) }}" class="button button-secondary">Назад</a>
+            {% endif %}
+            {% if history_has_next %}
+                <a href="{{ query_with(history_page=history_page + 1) }}" class="button button-secondary">Дальше</a>
+            {% endif %}
+        </div>
+    {% else %}
+        <p class="empty-state">Пока нет ни одного отчёта.</p>
+    {% endif %}
+</section>
+{% endblock %}

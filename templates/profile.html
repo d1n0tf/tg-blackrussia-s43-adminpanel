@@ -1,0 +1,334 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel-card dashboard-card">
+    <div class="section-head">
+        <div>
+            <h3>{{ card.nickname }}</h3>
+            <span class="{{ card.role_tone_class }}">{{ card.role }}</span>
+        </div>
+        <span class="{{ card.structure_tone_class }}">{{ card.structure or card.fraction or "Профиль" }}</span>
+    </div>
+    <div class="dashboard-lines">
+        <div class="dashboard-line"><span>Ник:</span> <strong>{{ card.nickname }}</strong></div>
+        <div class="dashboard-line"><span>Должность:</span> <strong class="{{ card.role_tone_class }}">{{ card.role }}</strong></div>
+        {% if card.fraction %}
+            <div class="dashboard-line"><span>Фракция:</span> <strong>{{ card.fraction }}</strong></div>
+        {% endif %}
+        {% if card.structure %}
+            <div class="dashboard-line"><span>Структура:</span> <strong class="{{ card.structure_tone_class }}">{{ card.structure }}</strong></div>
+        {% endif %}
+        <div class="dashboard-line"><span>Назначен:</span> <strong>{{ card.appointed }}</strong></div>
+        <div class="dashboard-line"><span>Возраст:</span> <strong>{{ card.age_text }} \ {{ card.birth_date }}</strong></div>
+        <div class="dashboard-line"><span>Город:</span> <strong>{{ card.city }}</strong></div>
+    </div>
+</section>
+
+<section class="panel-card dashboard-card">
+    <h3>ПОДРОБНАЯ ИНФОРМАЦИЯ</h3>
+    <div class="dashboard-lines">
+        <div class="dashboard-line"><span>Дней на посту:</span> <strong>{{ card.appointed_days_text }}</strong></div>
+        <div class="dashboard-line"><span>{{ card.days_left_label }}:</span> <strong>{{ card.days_left_value }}</strong></div>
+        <div class="dashboard-line"><span>Дней в неактиве:</span> <strong>{{ card.inactive_total_days_text }}</strong></div>
+        <div class="dashboard-line"><span>{{ card.metric_total_label }}:</span> <strong>{{ card.apa_text }}</strong></div>
+        <div class="dashboard-line"><span>Последнее повышение:</span> <strong>{{ card.promoted }}</strong></div>
+        <div class="dashboard-line"><span>Количество монеток:</span> <strong>{{ card.coins_text }}</strong></div>
+    </div>
+</section>
+
+{% if card.current_inactive %}
+    <section class="panel-card dashboard-card">
+        <h3>НЕАКТИВЫ</h3>
+        <div class="dashboard-lines">
+            <div class="dashboard-line"><span>Действующий неактив с</span> <strong>{{ card.current_inactive.start }} по {{ card.current_inactive.end }}</strong></div>
+            <div class="dashboard-line"><span>Причина неактива:</span> <strong>{{ card.current_inactive.reason or "Не указана" }}</strong></div>
+            <div class="dashboard-line"><span>Одобрил:</span> <strong>{{ card.current_inactive.approved_by }}</strong></div>
+        </div>
+    </section>
+{% endif %}
+
+<section class="panel-card dashboard-card">
+    <h3>НАКАЗАНИЯ</h3>
+    <div class="dashboard-lines">
+        <div class="dashboard-line"><span>Количество выговоров:</span> <strong>{{ card.rebuke }}</strong></div>
+        <div class="dashboard-line"><span>Количество предупреждений:</span> <strong>{{ card.warn }}</strong></div>
+        <div class="dashboard-line"><span>Количество устников:</span> <strong>{{ card.verbal }}</strong></div>
+        <div class="dashboard-line">
+            <span>Последнее наказание:</span>
+            <strong>
+                {% if card.last_punishment %}
+                    {{ card.last_punishment.label }} | {{ card.last_punishment.date }}
+                {% else %}
+                    —
+                {% endif %}
+            </strong>
+        </div>
+        <div class="dashboard-line"><span>Причина:</span> <strong>{{ card.last_punishment.reason if card.last_punishment else "—" }}</strong></div>
+        <div class="dashboard-line"><span>Выдано:</span> <strong>{{ card.last_punishment.issued_by if card.last_punishment else "—" }}</strong></div>
+    </div>
+</section>
+
+<section class="panel-card dashboard-card">
+    <h3>КОНТАКТНАЯ ИНФОРМАЦИЯ</h3>
+    <div class="dashboard-lines">
+        <div class="dashboard-line"><span>Discord:</span> <strong>{{ card.discord_id or "—" }}</strong></div>
+        <div class="dashboard-line"><span>ВКонтакте:</span> <strong>{{ card.vk or "—" }}</strong></div>
+        <div class="dashboard-line"><span>Форум:</span> <strong>{{ card.forum or "—" }}</strong></div>
+        <div class="dashboard-line"><span>Telegram:</span> <strong>{{ card.telegram_id or "—" }}</strong></div>
+    </div>
+</section>
+
+<section class="panel-card">
+    <h3>Управление профилем</h3>
+    <div class="profile-actions">
+        <button type="button" class="button button-danger review-trigger" data-review-toggle="profile-dismiss" aria-expanded="false">Снять с поста</button>
+        <button type="button" class="button button-secondary review-trigger" data-review-toggle="profile-edit" aria-expanded="false">Изменить информацию</button>
+        <button type="button" class="button button-secondary review-trigger" data-review-toggle="profile-punishment" aria-expanded="false">Наказания</button>
+        <button type="button" class="button button-primary review-trigger" data-review-toggle="profile-promote" aria-expanded="false">Повысить</button>
+        <button type="button" class="button button-secondary review-trigger" data-review-toggle="profile-inactives" aria-expanded="false">История неактивов</button>
+        <button type="button" class="button button-secondary review-trigger" data-review-toggle="profile-punishment-history" aria-expanded="false">История наказаний</button>
+        <button type="button" class="button button-secondary review-trigger" data-review-toggle="profile-reports" aria-expanded="false">Отчётность</button>
+    </div>
+</section>
+
+<section class="panel-card" data-review-panel="profile-dismiss" data-live-key="profile-dismiss" hidden>
+    <h3>Снять с поста</h3>
+    <form method="post" action="{{ request.url_for('profile_dismiss_user', user_id=target.id) }}" class="stack-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>
+            <span>Причина снятия</span>
+            <textarea name="reason" rows="4" required></textarea>
+        </label>
+        <button type="submit" class="button button-danger">Снять пользователя</button>
+    </form>
+</section>
+
+<section class="panel-card" data-review-panel="profile-edit" data-live-key="profile-edit" hidden>
+    <h3>Изменить информацию</h3>
+    <form method="post" action="{{ request.url_for('profile_update_user', user_id=target.id) }}" class="stack-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="split-fields">
+            <label><span>Ник</span><input type="text" name="nickname" value="{{ target.nickname }}" required></label>
+            <label>
+                <span>Должность</span>
+                <select name="role_value" data-role-select required>
+                    {% for role in role_options %}
+                        <option value="{{ role }}" {% if (role == "__leader__" and target.fraction) or target.role == role %}selected{% endif %}>{{ "Лидер" if role == "__leader__" else role }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+        <label data-fraction-wrap>
+            <span>Фракция лидера</span>
+            <select name="fraction">
+                {% for fraction in fractions %}
+                    <option value="{{ fraction }}" {% if target.fraction == fraction %}selected{% endif %}>{{ fraction }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <div class="split-fields">
+            <label><span>Имя</span><input type="text" name="name" value="{{ target.name }}" required></label>
+            <label><span>Дата рождения</span><input type="date" name="birth_date" value="{{ target.age|datetime_to_input }}" required></label>
+        </div>
+        <label><span>Город</span><input type="text" name="city" value="{{ target.city }}" required></label>
+        <div class="split-fields">
+            <label><span>Discord ID</span><input type="text" name="discord_id" value="{{ target.discord_id if target.discord_id else '' }}"></label>
+            <label><span>Telegram ID</span><input type="text" name="telegram_id" value="{{ target.telegram_id if target.telegram_id else '' }}"></label>
+        </div>
+        <div class="split-fields">
+            <label><span>ВКонтакте</span><input type="text" name="vk" value="{{ target.vk }}"></label>
+            <label><span>Форум</span><input type="text" name="forum" value="{{ target.forum }}"></label>
+        </div>
+        <div class="split-fields">
+            <label><span>Назначен</span><input type="datetime-local" name="appointed_at" value="{{ target.appointed|datetime_local_to_input }}" required></label>
+            <label><span>Последнее повышение</span><input type="datetime-local" name="promoted_at" value="{{ target.promoted|datetime_local_to_input }}"></label>
+        </div>
+        <div class="split-fields">
+            <label><span>Текущий неактив с</span><input type="date" name="inactive_start" value="{{ target.inactivestart|datetime_to_input }}"></label>
+            <label><span>Текущий неактив по</span><input type="date" name="inactive_end" value="{{ target.inactiveend|datetime_to_input }}"></label>
+        </div>
+        <div class="split-fields">
+            <label><span>{{ card.metric_total_label }}</span><input type="number" name="apa" min="0" value="{{ target.apa }}" required></label>
+            <label><span>Дни норматива</span><input type="number" name="objective_completed" min="0" value="{{ target.objective_completed or 0 }}" required></label>
+        </div>
+        <div class="split-fields">
+            <label><span>Монетки</span><input type="number" name="coins" min="0" value="{{ target.coins }}" required></label>
+            <label><span>Выговоры</span><input type="number" name="rebuke" min="0" value="{{ target.rebuke }}" required></label>
+        </div>
+        <div class="split-fields">
+            <label><span>Предупреждения</span><input type="number" name="warn" min="0" value="{{ target.warn }}" required></label>
+            <label><span>Устники</span><input type="number" name="verbal" min="0" value="{{ target.verbal }}" required></label>
+        </div>
+        <button type="submit" class="button button-primary">Сохранить изменения</button>
+    </form>
+</section>
+
+<section class="panel-card" data-review-panel="profile-punishment" data-live-key="profile-punishment" hidden>
+    <h3>Наказания</h3>
+    <form method="post" action="{{ request.url_for('profile_add_punishment', user_id=target.id) }}" class="stack-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>
+            <span>Тип наказания</span>
+            <select name="punishment_type">
+                {% for key, label in punishment_labels.items() %}
+                    <option value="{{ key }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label><span>Причина</span><textarea name="reason" rows="3" required></textarea></label>
+        <button type="submit" class="button button-secondary">Выдать наказание</button>
+    </form>
+    <h4>Действующие наказания</h4>
+    {% if active_punishments %}
+        <div class="table-list">
+            {% for row in active_punishments %}
+                <div class="table-item">
+                    <strong>{{ row.type }}</strong>
+                    <span>{{ row.reason }}</span>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="empty-state">Активных наказаний нет.</p>
+    {% endif %}
+</section>
+
+<section class="panel-card" data-review-panel="profile-promote" data-live-key="profile-promote" hidden>
+    <h3>Повысить / изменить уровень</h3>
+    <form method="post" action="{{ request.url_for('profile_promote_user', user_id=target.id) }}" class="stack-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>
+            <span>Новая должность</span>
+            <select name="role_value" data-role-select required>
+                {% for role in role_options %}
+                    <option value="{{ role }}" {% if (role == "__leader__" and target.fraction) or target.role == role %}selected{% endif %}>{{ "Лидер" if role == "__leader__" else role }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label data-fraction-wrap>
+            <span>Фракция лидера</span>
+            <select name="fraction">
+                {% for fraction in fractions %}
+                    <option value="{{ fraction }}" {% if target.fraction == fraction %}selected{% endif %}>{{ fraction }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="checkbox-line">
+            <input type="checkbox" name="reset_objective" value="1">
+            <span>Аннулировать все дни нормы</span>
+        </label>
+        <label><span>Сколько ответов снять</span><input type="number" name="answers_penalty" min="0" value="0"></label>
+        <button type="submit" class="button button-primary">Повысить</button>
+    </form>
+</section>
+
+<section class="panel-card" data-review-panel="profile-inactives" data-live-key="profile-inactives" hidden>
+    <h3>История неактивов</h3>
+    {% if inactive_history %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Период</th>
+                        <th>Статус</th>
+                        <th>Причина</th>
+                        <th>Рассмотрел</th>
+                        <th>Дата</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in inactive_history %}
+                        <tr>
+                            <td data-label="ID">{{ row.id }}</td>
+                            <td data-label="Период">{{ row.start }} → {{ row.end }}</td>
+                            <td data-label="Статус">{{ row.status }}</td>
+                            <td data-label="Причина">{{ row.reason }}</td>
+                            <td data-label="Рассмотрел">{{ row.processed_by }}</td>
+                            <td data-label="Дата">{{ row.processed_at }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">История неактивов пустая.</p>
+    {% endif %}
+</section>
+
+<section class="panel-card" data-review-panel="profile-punishment-history" data-live-key="profile-punishment-history" hidden>
+    <h3>История наказаний</h3>
+    {% if punishment_history %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Тип</th>
+                        <th>Причина</th>
+                        <th>Выдал</th>
+                        <th>Дата выдачи</th>
+                        <th>Снято</th>
+                        <th>Кем снято</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in punishment_history %}
+                        <tr>
+                            <td data-label="Тип">{{ row.type }}</td>
+                            <td data-label="Причина">{{ row.reason }}</td>
+                            <td data-label="Выдал">{{ row.issued_by }}</td>
+                            <td data-label="Дата выдачи">{{ row.issued_at }}</td>
+                            <td data-label="Снято">{{ row.removed_at }}</td>
+                            <td data-label="Кем снято">{{ row.removed_by }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">История наказаний пустая.</p>
+    {% endif %}
+</section>
+
+<section class="panel-card" data-review-panel="profile-reports" data-live-key="profile-reports" hidden>
+    <h3>Отчётность</h3>
+    {% if report_history %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Тип</th>
+                        <th>Дата</th>
+                        <th>Файлы</th>
+                        <th>Статус</th>
+                        <th>Рассмотрел</th>
+                        <th>Выдано</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in report_history %}
+                        <tr>
+                            <td data-label="ID">{{ row.id }}</td>
+                            <td data-label="Тип">{{ row.type }}</td>
+                            <td data-label="Дата">{{ row.created_at }}</td>
+                            <td data-label="Файлы">
+                                <div class="cell-links">
+                                    {% for item in row.attachments %}
+                                        <a href="{{ request.url_for('download_attachment', entity='report', record_id=row.id, index=loop.index0) }}">Файл {{ loop.index }}</a>
+                                    {% endfor %}
+                                </div>
+                            </td>
+                            <td data-label="Статус">{{ status_label.get(row.status, row.status) }}</td>
+                            <td data-label="Рассмотрел">{{ row.checked_by }}</td>
+                            <td data-label="Выдано">{{ row.credited_amount }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">Отчётность пустая.</p>
+    {% endif %}
+</section>
+{% endblock %}

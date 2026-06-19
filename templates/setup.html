@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block auth_content %}
+<section class="auth-card">
+    <div class="auth-copy">
+        <span class="eyebrow">Первичная настройка</span>
+        <h1>Создание пароля</h1>
+        <p>Ссылка привязана к пользователю <strong>{{ user.nickname }}</strong>. После установки пароля эта ссылка перестанет работать.</p>
+    </div>
+    <form method="post" action="{{ request.url_for('setup_password_action', token=token) }}" class="stack-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>
+            <span>Новый пароль</span>
+            <input type="password" name="password" minlength="8" required>
+        </label>
+        <label>
+            <span>Повторите пароль</span>
+            <input type="password" name="password_repeat" minlength="8" required>
+        </label>
+        <button type="submit" class="button button-primary">Сохранить пароль</button>
+    </form>
+</section>
+{% endblock %}

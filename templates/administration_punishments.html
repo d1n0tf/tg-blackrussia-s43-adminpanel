@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel-card">
+    <h3>СНЯТИЕ НАКАЗАНИЙ АДМИНИСТРАЦИИ</h3>
+    <p class="section-copy">Заявления на проверку и история рассмотрений.</p>
+</section>
+
+<section class="panel-card">
+    <div class="section-head">
+        <h3>ЗАЯВЛЕНИЯ НА ПРОВЕРКУ</h3>
+        <span>Страница {{ pending_page }}</span>
+    </div>
+    {% if pending_rows %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Ник</th>
+                        <th>Должность</th>
+                        <th>Тип наказания</th>
+                        <th>Ответов</th>
+                        <th>Дата отправки</th>
+                        <th>Прошло дней с получения</th>
+                        <th>Рассмотреть</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in pending_rows %}
+                        <tr>
+                            <td data-label="ID">{{ row.id }}</td>
+                            <td data-label="Ник">{{ row.user.nickname if row.user else '—' }}</td>
+                            <td data-label="Должность"><span class="{{ role_tone_class(row.role) }}">{{ row.role or '—' }}</span></td>
+                            <td data-label="Тип наказания">{{ row.punishment_type }}</td>
+                            <td data-label="Ответов">{{ row.answers }}</td>
+                            <td data-label="Дата отправки">{{ row.created_at }}</td>
+                            <td data-label="Прошло дней с получения">{{ row.days_since_issue }}</td>
+                            <td data-label="Рассмотреть">
+                                <button type="button" class="button button-secondary summary-button review-trigger" data-review-toggle="admin-punishment-review-{{ row.id }}" aria-expanded="false">Рассмотреть</button>
+                            </td>
+                        </tr>
+                        <tr class="review-panel-row" data-review-panel="admin-punishment-review-{{ row.id }}" data-live-key="admin-punishment-review-{{ row.id }}" hidden>
+                            <td colspan="8" class="review-panel-cell">
+                                <div class="review-body review-body-wide">
+                                    <form method="post" action="{{ request.url_for('review_punishment_request', scope='admins', request_id=row.id) }}" class="stack-form">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <label>
+                                            <span>Сколько ответов снять</span>
+                                            <input type="number" name="answers_penalty" min="0" value="0">
+                                        </label>
+                                        <label>
+                                            <span>Комментарий / причина отказа</span>
+                                            <textarea name="comment" rows="3"></textarea>
+                                        </label>
+                                        <div class="review-actions">
+                                            <button type="submit" name="decision" value="approve" class="button button-primary">Одобрить</button>
+                                            <button type="submit" name="decision" value="reject" class="button button-danger">Отказать</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="pager">
+            {% if pending_page > 1 %}
+                <a href="{{ query_with(pending_page=pending_page - 1) }}" class="button button-secondary">Назад</a>
+            {% endif %}
+            {% if pending_has_next %}
+                <a href="{{ query_with(pending_page=pending_page + 1) }}" class="button button-secondary">Дальше</a>
+            {% endif %}
+        </div>
+    {% else %}
+        <p class="empty-state">Новых заявлений нет.</p>
+    {% endif %}
+</section>
+
+<section class="panel-card">
+    <div class="section-head">
+        <h3>ИСТОРИЯ СНЯТИЙ НАКАЗАНИЙ</h3>
+        <span>Страница {{ history_page }}</span>
+    </div>
+    {% if history_rows %}
+        <div class="table-wrap">
+            <table class="table admin-punishment-history-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Ник</th>
+                        <th>Должность</th>
+                        <th>Тип наказания</th>
+                        <th>Ответов</th>
+                        <th>Снятые ответы</th>
+                        <th>Дата отправки</th>
+                        <th>Прошло дней с получения</th>
+                        <th>Статус</th>
+                        <th>Рассмотрел</th>
+                        <th>Рассмотрел когда</th>
+                        <th>Комментарий</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in history_rows %}
+                        <tr>
+                            <td data-label="ID">{{ row.id }}</td>
+                            <td data-label="Ник">{{ row.user.nickname if row.user else '—' }}</td>
+                            <td data-label="Должность"><span class="{{ role_tone_class(row.role) }}">{{ row.role or '—' }}</span></td>
+                            <td data-label="Тип наказания">{{ row.punishment_type }}</td>
+                            <td data-label="Ответов" class="numeric-cell">{{ row.answers if row.answers is not none else '—' }}</td>
+                            <td data-label="Снятые ответы" class="numeric-cell">{{ row.answers_penalty if row.status == 'approved' else '—' }}</td>
+                            <td data-label="Дата отправки">{{ row.created_at }}</td>
+                            <td data-label="Прошло дней с получения">{{ row.days_since_issue }}</td>
+                            <td data-label="Статус" class="compact-status-cell">{{ status_label.get(row.status, row.status) }}</td>
+                            <td data-label="Рассмотрел">{{ row.processed_by }}</td>
+                            <td data-label="Рассмотрел когда">{{ row.processed_at }}</td>
+                            <td data-label="Комментарий" class="wide-mobile-cell">{{ row.reason }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="pager">
+            {% if history_page > 1 %}
+                <a href="{{ query_with(history_page=history_page - 1) }}" class="button button-secondary">Назад</a>
+            {% endif %}
+            {% if history_has_next %}
+                <a href="{{ query_with(history_page=history_page + 1) }}" class="button button-secondary">Дальше</a>
+            {% endif %}
+        </div>
+    {% else %}
+        <p class="empty-state">История пока пустая.</p>
+    {% endif %}
+</section>
+{% endblock %}

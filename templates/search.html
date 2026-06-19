@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel-card">
+    <div class="section-head">
+        <h3>Результаты поиска</h3>
+        {% if q %}
+            <span>{{ result_total }} совпад.</span>
+        {% endif %}
+    </div>
+    <form method="get" action="{{ request.url_for('global_search_page') }}" class="inline-form search-page-form">
+        <input type="search" name="q" value="{{ q }}" placeholder="Ник, ВК, форум или Telegram ID" autofocus>
+        <button type="submit" class="button button-primary">Найти</button>
+    </form>
+    {% if q and results %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>№</th>
+                        <th>Ник</th>
+                        <th>Сфера</th>
+                        <th>Должность</th>
+                        <th>Telegram ID</th>
+                        <th>ВКонтакте</th>
+                        <th>Форум</th>
+                        <th>Действие</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in results %}
+                        <tr>
+                            <td data-label="№">{{ result_number_offset + loop.index }}</td>
+                            <td data-label="Ник">{{ row.user.nickname }}</td>
+                            <td data-label="Сфера"><span class="{{ structure_tone_class(row.scope_title) }}">{{ row.scope_title }}</span></td>
+                            <td data-label="Должность">
+                                <span class="{{ role_tone_class(row.user.role) }}">{{ row.role }}</span>
+                            </td>
+                            <td data-label="Telegram ID">{{ row.user.telegram_id }}</td>
+                            <td data-label="ВКонтакте">{{ row.user.vk or "—" }}</td>
+                            <td data-label="Форум">{{ row.user.forum or "—" }}</td>
+                            <td data-label="Действие">
+                                {% if row.href %}
+                                    <a href="{{ row.href }}" class="button button-secondary">Открыть</a>
+                                {% else %}
+                                    <span class="muted-copy">Только просмотр</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="pager">
+            {% if page > 1 %}
+                <a href="{{ query_with(page=page - 1) }}" class="button button-secondary">Назад</a>
+            {% endif %}
+            {% if has_next %}
+                <a href="{{ query_with(page=page + 1) }}" class="button button-secondary">Дальше</a>
+            {% endif %}
+        </div>
+    {% elif q %}
+        <p class="empty-state">Ничего не найдено.</p>
+    {% else %}
+        <p class="empty-state">Введите ник, ВК, форум или Telegram ID.</p>
+    {% endif %}
+</section>
+{% endblock %}

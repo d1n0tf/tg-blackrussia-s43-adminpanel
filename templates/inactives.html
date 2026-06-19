@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid two-cols">
+    <article class="panel-card">
+        <h3>Запросить неактив</h3>
+        {% if inactive_request_block_reason %}
+            <div class="callout">
+                <p>{{ inactive_request_block_reason }}</p>
+            </div>
+        {% endif %}
+        <form method="post" action="{{ request.url_for('create_inactive_request') }}" class="stack-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="split-fields">
+                <label>
+                    <span>Дата начала</span>
+                    <input type="date" name="start_date" value="{{ today }}" required {% if inactive_request_block_reason %}disabled{% endif %}>
+                </label>
+                <label>
+                    <span>Дата конца</span>
+                    <input type="date" name="end_date" value="{{ today }}" required {% if inactive_request_block_reason %}disabled{% endif %}>
+                </label>
+            </div>
+            <label>
+                <span>Причина</span>
+                <textarea name="reason" rows="4" placeholder="Кратко опишите причину" required {% if inactive_request_block_reason %}disabled{% endif %}></textarea>
+            </label>
+            <button type="submit" class="button button-primary" {% if inactive_request_block_reason %}disabled{% endif %}>
+                {% if inactive_request_block_reason %}Отправка недоступна{% else %}Отправить заявку{% endif %}
+            </button>
+        </form>
+    </article>
+
+    <article class="panel-card">
+        <h3>Текущий статус</h3>
+        {% if current %}
+            <div class="callout accent">
+                <p>{{ current.start }} → {{ current.end }}</p>
+                <p>Причина: {{ current.reason or "Не указана" }}</p>
+                <p>Одобрил: {{ current.approved_by }}</p>
+            </div>
+            <form method="post" action="{{ request.url_for('cancel_inactive') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="button button-danger">Снять текущий неактив</button>
+            </form>
+        {% else %}
+            <p class="empty-state">Активного неактива нет.</p>
+        {% endif %}
+        {% if pending %}
+            <div class="stack-list">
+                {% for row in pending %}
+                    <div class="stack-item">
+                        <strong>Заявка #{{ row.id }}</strong>
+                        <span>{{ row.start }} → {{ row.end }}</span>
+                        <span>{{ row.reason }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </article>
+</section>
+
+<section class="panel-card">
+    <div class="section-head">
+        <h3>История неактивов</h3>
+        <span>Страница {{ history_page }}</span>
+    </div>
+    {% if history %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Период</th>
+                        <th>Статус</th>
+                        <th>Причина</th>
+                        <th>Ответственный</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in history %}
+                        <tr>
+                            <td data-label="ID">{{ row.id }}</td>
+                            <td data-label="Период">{{ row.start }} → {{ row.end }}</td>
+                            <td data-label="Статус">{{ status_label.get(row.status, row.status) }}</td>
+                            <td data-label="Причина">
+                                {{ row.reason }}
+                                {% if row.process_comment %}
+                                    <br>
+                                    <span class="muted-copy">Комментарий: {{ row.process_comment }}</span>
+                                {% endif %}
+                            </td>
+                            <td data-label="Ответственный">{{ row.processed_by }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="pager">
+            {% if history_page > 1 %}
+                <a href="{{ query_with(history_page=history_page - 1) }}" class="button button-secondary">Назад</a>
+            {% endif %}
+            {% if history_has_next %}
+                <a href="{{ query_with(history_page=history_page + 1) }}" class="button button-secondary">Дальше</a>
+            {% endif %}
+        </div>
+    {% else %}
+        <p class="empty-state">История пока пустая.</p>
+    {% endif %}
+</section>
+{% endblock %}

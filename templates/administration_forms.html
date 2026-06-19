@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel-card">
+    <h3>СИСТЕМА ВЫДАЧИ НАКАЗАНИЙ (ФОРМЫ)</h3>
+    <p class="section-copy">Статистика</p>
+    <div class="hero-metrics">
+        <div class="metric-pill">
+            <span>Всего принятых форм</span>
+            <strong>{{ approved_total }}</strong>
+        </div>
+        <div class="metric-pill">
+            <span>На проверке форм</span>
+            <strong>{{ pending_total }}</strong>
+        </div>
+    </div>
+</section>
+
+<section class="panel-card">
+    <div class="section-head">
+        <h3>ФОРМЫ НА ПРОВЕРКУ</h3>
+        <span>Страница {{ pending_page }}</span>
+    </div>
+    {% if pending_rows %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Форма</th>
+                        <th>Доказательства</th>
+                        <th>Отправитель</th>
+                        <th>Действие</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in pending_rows %}
+                        <tr>
+                            <td data-label="ID">{{ row.id }}</td>
+                            <td data-label="Форма"><code>{{ row.form }}</code></td>
+                            <td data-label="Доказательства">
+                                <div class="proof-list">
+                                    {% for item in row.proofs %}
+                                        <div class="proof-item">
+                                            {% if item.type == 'file' %}
+                                                {% set file_href = request.url_for('download_attachment', entity='form', record_id=row.id, index=loop.index0) %}
+                                                <strong class="proof-name">{{ item.name }}</strong>
+                                                <div class="proof-actions">
+                                                    {% if item.is_image %}
+                                                        <a href="{{ file_href }}?mode=view" target="_blank" rel="noopener noreferrer">Открыть</a>
+                                                    {% endif %}
+                                                    <a href="{{ file_href }}">Скачать</a>
+                                                </div>
+                                            {% else %}
+                                                <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.name }}</a>
+                                            {% endif %}
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            </td>
+                            <td data-label="Отправитель">{{ row.user.nickname if row.user else '—' }}</td>
+                            <td data-label="Действие">
+                                <button type="button" class="button button-secondary summary-button review-trigger" data-review-toggle="admin-form-review-{{ row.id }}" aria-expanded="false">Рассмотреть</button>
+                            </td>
+                        </tr>
+                        <tr class="review-panel-row" data-review-panel="admin-form-review-{{ row.id }}" data-live-key="admin-form-review-{{ row.id }}" hidden>
+                            <td colspan="5" class="review-panel-cell">
+                                <div class="review-body review-body-wide">
+                                    <form method="post" action="{{ request.url_for('review_form', scope='admins', form_id=row.id) }}" class="stack-form">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <label>
+                                            <span>Комментарий</span>
+                                            <textarea name="result" rows="3" placeholder="Комментарий к решению"></textarea>
+                                        </label>
+                                        <div class="review-actions">
+                                            <button type="submit" name="decision" value="approve" class="button button-primary">Одобрить</button>
+                                            <button type="submit" name="decision" value="reject" class="button button-danger">Отменить</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="pager">
+            {% if pending_page > 1 %}
+                <a href="{{ query_with(pending_page=pending_page - 1) }}" class="button button-secondary">Назад</a>
+            {% endif %}
+            {% if pending_has_next %}
+                <a href="{{ query_with(pending_page=pending_page + 1) }}" class="button button-secondary">Дальше</a>
+            {% endif %}
+        </div>
+    {% else %}
+        <p class="empty-state">Форм на проверку сейчас нет.</p>
+    {% endif %}
+</section>
+
+<section class="panel-card">
+    <div class="section-head">
+        <h3>ИСТОРИЯ ФОРМ</h3>
+        <span>Страница {{ history_page }}</span>
+    </div>
+    {% if history_rows %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Форма</th>
+                        <th>Доказательства</th>
+                        <th>Отправитель</th>
+                        <th>Статус</th>
+                        <th>Рассмотрел</th>
+                        <th>Дата</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in history_rows %}
+                        <tr>
+                            <td data-label="ID">{{ row.id }}</td>
+                            <td data-label="Форма"><code>{{ row.form }}</code></td>
+                            <td data-label="Доказательства">
+                                <div class="proof-list">
+                                    {% for item in row.proofs %}
+                                        <div class="proof-item">
+                                            {% if item.type == 'file' %}
+                                                {% set file_href = request.url_for('download_attachment', entity='form', record_id=row.id, index=loop.index0) %}
+                                                <strong class="proof-name">{{ item.name }}</strong>
+                                                <div class="proof-actions">
+                                                    {% if item.is_image %}
+                                                        <a href="{{ file_href }}?mode=view" target="_blank" rel="noopener noreferrer">Открыть</a>
+                                                    {% endif %}
+                                                    <a href="{{ file_href }}">Скачать</a>
+                                                </div>
+                                            {% else %}
+                                                <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.name }}</a>
+                                            {% endif %}
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            </td>
+                            <td data-label="Отправитель">{{ row.user.nickname if row.user else '—' }}</td>
+                            <td data-label="Статус">{{ status_label.get(row.status, row.status) }}</td>
+                            <td data-label="Рассмотрел">{{ row.processed_by }}</td>
+                            <td data-label="Дата">{{ row.processed_at }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="pager">
+            {% if history_page > 1 %}
+                <a href="{{ query_with(history_page=history_page - 1) }}" class="button button-secondary">Назад</a>
+            {% endif %}
+            {% if history_has_next %}
+                <a href="{{ query_with(history_page=history_page + 1) }}" class="button button-secondary">Дальше</a>
+            {% endif %}
+        </div>
+    {% else %}
+        <p class="empty-state">История пока пустая.</p>
+    {% endif %}
+</section>
+{% endblock %}

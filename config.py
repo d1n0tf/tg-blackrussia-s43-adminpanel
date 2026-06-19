@@ -1,11 +1,12 @@
+import os
 from configparser import ConfigParser
 
 config = ConfigParser()
 config.read(f"{__file__.replace('config.py', 'config.ini')}")
 
-TOKEN = config["TG"]["TOKEN"]
+TOKEN = os.getenv("TG_TOKEN", config.get("TG", "TOKEN", fallback=""))
 
-DATABASE = "tgbradminpanel"
+DATABASE = os.getenv("DATABASE", "tgbradminpanel")
 
 ADMIN = [1810809634, 6931589642]
 

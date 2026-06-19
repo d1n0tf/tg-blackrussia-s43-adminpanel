@@ -19,14 +19,14 @@ _lastupdate = 0
 
 
 def getSheetsByID(sheetid: str):
-    if google_sheets is None:
+    if google_sheets is None or not sheetid or len(sheetid.strip()) < 20:
         return
     sh = google_sheets.open_by_key(sheetid)
     return sh.get_worksheet(0), sh.get_worksheet(1), sh.get_worksheet(2)
 
 
 def getappointformbycode(sheetid: str, code: str, nickname: str | None) -> list | None:
-    if google_sheets is None:
+    if google_sheets is None or not sheetid or len(sheetid.strip()) < 20:
         return
     sh = google_sheets.open_by_key(sheetid)
     ws = sh.get_worksheet(0)
@@ -43,7 +43,7 @@ def getappointformbycode(sheetid: str, code: str, nickname: str | None) -> list 
 
 
 def search(sheetid: str, value) -> list | None:
-    if google_sheets is None:
+    if google_sheets is None or not sheetid or len(sheetid.strip()) < 20:
         return
     value = str(value)
     res = [[], []]
@@ -217,7 +217,7 @@ def fillcompisiton_s(sheet, data):
                 Cell(
                     row=3 + k,
                     col=12,
-                    value=f"{calcage(i.age)} ({calcdateofbirth(i.age)})",
+                    value=f"{calcage(i.age)} лет ({calcdateofbirth(i.age)})",
                 ),
                 Cell(row=3 + k, col=13, value=i.city),
                 Cell(row=3 + k, col=14, value=str(i.discord_id)),
@@ -323,7 +323,7 @@ def fillcompisiton_l(sheet, data):
                 Cell(
                     row=3 + k,
                     col=12,
-                    value=f"{calcage(i.age)} ({calcdateofbirth(i.age)})",
+                    value=f"{calcage(i.age)} лет ({calcdateofbirth(i.age)})",
                 ),
                 Cell(row=3 + k, col=13, value=i.city),
                 Cell(row=3 + k, col=14, value=str(i.discord_id)),
@@ -427,7 +427,7 @@ def fillcompisiton_a(sheet, data):
                 Cell(
                     row=3 + k,
                     col=13,
-                    value=f"{calcage(i.age)} ({calcdateofbirth(i.age)})",
+                    value=f"{calcage(i.age)} лет ({calcdateofbirth(i.age)})",
                 ),
                 Cell(row=3 + k, col=14, value=i.city),
                 Cell(row=3 + k, col=15, value=str(i.discord_id)),
@@ -508,7 +508,7 @@ def fillremoved_s(sheet, data):
                 Cell(row=3 + k, col=2, value=i.nickname),
                 Cell(row=3 + k, col=3, value=appointed),
                 Cell(row=3 + k, col=4, value=i.name),
-                Cell(row=3 + k, col=5, value=i.age),
+                Cell(row=3 + k, col=5, value=f"{i.age} лет"),
                 Cell(row=3 + k, col=6, value=i.city),
                 Cell(row=3 + k, col=7, value=str(i.discord_id)),
                 Cell(row=3 + k, col=8, value=i.telegram_id),
@@ -593,7 +593,7 @@ def fillremoved_l(sheet, data):
                 Cell(row=3 + k, col=3, value=i.fraction),
                 Cell(row=3 + k, col=4, value=appointed),
                 Cell(row=3 + k, col=5, value=i.name),
-                Cell(row=3 + k, col=6, value=i.age),
+                Cell(row=3 + k, col=6, value=f"{i.age} лет"),
                 Cell(row=3 + k, col=7, value=i.city),
                 Cell(row=3 + k, col=8, value=str(i.discord_id)),
                 Cell(row=3 + k, col=9, value=i.telegram_id),
@@ -678,7 +678,7 @@ def fillremoved_a(sheet, data):
                 Cell(row=3 + k, col=3, value=i.role),
                 Cell(row=3 + k, col=4, value=appointed),
                 Cell(row=3 + k, col=5, value=i.name),
-                Cell(row=3 + k, col=6, value=i.age),
+                Cell(row=3 + k, col=6, value=f"{i.age} лет"),
                 Cell(row=3 + k, col=7, value=i.city),
                 Cell(row=3 + k, col=8, value=str(i.discord_id)),
                 Cell(row=3 + k, col=9, value=i.telegram_id),
