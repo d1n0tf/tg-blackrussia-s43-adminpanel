@@ -59,6 +59,16 @@ SECRET_KEY = os.getenv("FASTAPI_SECRET_KEY") or TOKEN or "fastapi-dev-secret"
 USER_LIST_PAGE_SIZE = 25
 ADMIN_LIST_PAGE_SIZE = 100
 
+
+def static_version() -> int:
+    return int(
+        max(
+            (STATIC_DIR / "app.css").stat().st_mtime,
+            (STATIC_DIR / "app.js").stat().st_mtime,
+        )
+    )
+
+
 TOP_MANAGER_ROLES = (
     "Главный администратор",
     "Основной ЗГА",
@@ -1076,6 +1086,7 @@ def render(
             "flash": pop_flash(request),
             "generated_link": pop_generated_link(request),
             "csrf_token": ensure_csrf_token(request),
+            "static_version": static_version(),
             "query_with": lambda **updates: query_with(request, **updates),
             "global_search_scopes": accessible_search_scopes(user) if user else [],
             "global_search_query": request.query_params.get("q", "") if active_page == "search" else "",
