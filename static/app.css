@@ -238,9 +238,34 @@ textarea {
 }
 
 .nav-link {
+    align-items: center;
+    display: flex;
+    gap: 0.7rem;
+    justify-content: space-between;
     padding: 0.95rem 1rem;
     border-radius: 14px;
     transition: transform 180ms ease, background 180ms ease;
+}
+
+.nav-link-label {
+    min-width: 0;
+}
+
+.nav-badge {
+    align-items: center;
+    background: #b63f2f;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    border-radius: 999px;
+    box-shadow: 0 8px 18px rgba(182, 63, 47, 0.2);
+    color: #fff;
+    display: inline-flex;
+    flex: 0 0 auto;
+    font-size: 0.78rem;
+    font-weight: 800;
+    justify-content: center;
+    line-height: 1;
+    min-width: 1.65rem;
+    padding: 0.28rem 0.45rem;
 }
 
 .nav-link:hover,

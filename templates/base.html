@@ -33,7 +33,10 @@
                                 <div class="nav-divider">{{ 'Администрация' if item.section == 'administration' else 'Управление' }}</div>
                             {% endif %}
                             <a href="{{ item.href }}" class="nav-link {% if item.active == 'true' %}is-active{% endif %}">
-                                {{ item.title }}
+                                <span class="nav-link-label">{{ item.title }}</span>
+                                {% if item.badge %}
+                                    <span class="nav-badge" aria-label="В ожидании: {{ item.badge }}">{{ item.badge }}</span>
+                                {% endif %}
                             </a>
                             {% set mobile_nav.last_section = item.section %}
                         {% endfor %}
@@ -61,7 +64,10 @@
                             <div class="nav-divider">{{ 'Администрация' if item.section == 'administration' else 'Управление' }}</div>
                         {% endif %}
                         <a href="{{ item.href }}" class="nav-link {% if item.active == 'true' %}is-active{% endif %}">
-                            {{ item.title }}
+                            <span class="nav-link-label">{{ item.title }}</span>
+                            {% if item.badge %}
+                                <span class="nav-badge" aria-label="В ожидании: {{ item.badge }}">{{ item.badge }}</span>
+                            {% endif %}
                         </a>
                         {% set desktop_nav.last_section = item.section %}
                     {% endfor %}

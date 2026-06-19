@@ -454,7 +454,124 @@ def profile_role_options(actor: Users, target: Users) -> list[str]:
     return []
 
 
-def menu_for_user(user: Users, active_page: str) -> list[dict[str, str]]:
+def count_actionable_punishment_requests_for_admins(admin_lookup: dict[str, Users]) -> int:
+    pending_keys: set[tuple[int, str]] = set()
+    for record in (
+        PunishmentsRequests.select()
+        .where(PunishmentsRequests.status == "pending")
+        .order_by(PunishmentsRequests.id.desc())
+    ):
+        owner = admin_lookup.get(str(record.telegram_id))
+        if owner is None:
+            continue
+        if int(getattr(owner, record.punishment, 0) or 0) <= 0:
+            continue
+        pending_keys.add((owner.id, record.punishment))
+    return len(pending_keys)
+
+
+def count_actionable_punishment_requests_for_user(user: Users) -> int:
+    active_types = {
+        punishment_type
+        for punishment_type in PUNISHMENT_LABELS
+        if int(getattr(user, punishment_type, 0) or 0) > 0
+    }
+    if not active_types:
+        return 0
+    pending_types = {
+        record.punishment
+        for record in (
+            PunishmentsRequests.select()
+            .where(
+                PunishmentsRequests.telegram_id == str(user.telegram_id),
+                PunishmentsRequests.status == "pending",
+                PunishmentsRequests.punishment << list(active_types),
+            )
+        )
+    }
+    return len(pending_types)
+
+
+def pending_menu_badges(user: Users) -> dict[str, int]:
+    badges: dict[str, int] = {}
+    user_tgid = str(user.telegram_id)
+
+    own_inactives = (
+        InactiveRequests.select()
+        .where(
+            InactiveRequests.tgid == user_tgid,
+            InactiveRequests.status == "pending",
+        )
+        .count()
+    )
+    if own_inactives:
+        badges["inactives"] = own_inactives
+
+    if user.role in ROLES:
+        own_reports = Reports.select().where(Reports.user == user, Reports.status == "pending").count()
+        own_forms = (
+            Forms.select()
+            .where(
+                Forms.fromtgid == user.telegram_id,
+                Forms.status == "pending",
+            )
+            .count()
+        )
+        own_punishments = count_actionable_punishment_requests_for_user(user)
+        if own_reports:
+            badges["reports"] = own_reports
+        if own_forms:
+            badges["forms"] = own_forms
+        if own_punishments:
+            badges["punishments"] = own_punishments
+
+    if can_access_admin_reviews(user):
+        admin_users = list(Users.select().where(Users.role << ROLES))
+        admin_tgids = [admin.telegram_id for admin in admin_users]
+        admin_tgid_strings = [str(admin.telegram_id) for admin in admin_users]
+        admin_ids = [admin.id for admin in admin_users]
+        admin_lookup = {str(admin.telegram_id): admin for admin in admin_users}
+        if admin_tgid_strings:
+            admin_inactives = (
+                InactiveRequests.select()
+                .where(
+                    InactiveRequests.tgid << admin_tgid_strings,
+                    InactiveRequests.status == "pending",
+                )
+                .count()
+            )
+            if admin_inactives:
+                badges["administration_inactives"] = admin_inactives
+        if admin_tgids:
+            admin_forms = (
+                Forms.select()
+                .where(
+                    Forms.fromtgid << admin_tgids,
+                    Forms.status == "pending",
+                )
+                .count()
+            )
+            if admin_forms:
+                badges["administration_forms"] = admin_forms
+        if admin_ids:
+            admin_reports = (
+                Reports.select()
+                .where(
+                    Reports.user_id << admin_ids,
+                    Reports.status == "pending",
+                )
+                .count()
+            )
+            if admin_reports:
+                badges["administration_reports"] = admin_reports
+        admin_punishments = count_actionable_punishment_requests_for_admins(admin_lookup)
+        if admin_punishments:
+            badges["administration_punishments"] = admin_punishments
+
+    return badges
+
+
+def menu_for_user(user: Users, active_page: str) -> list[dict[str, Any]]:
     items = [
         {"title": "Главная", "href": "/dashboard", "key": "dashboard", "section": "main"},
         {"title": "Неактивы", "href": "/inactives", "key": "inactives", "section": "main"},
@@ -521,8 +638,10 @@ def menu_for_user(user: Users, active_page: str) -> list[dict[str, str]]:
                 "section": "management",
             }
         )
+    badges = pending_menu_badges(user)
     for item in items:
         item["active"] = "true" if item["key"] == active_page else "false"
+        item["badge"] = badges.get(item["key"], 0)
     return items
 
 
@@ -1415,6 +1534,44 @@ def admin_punishment_request_rows(status: str | None = None) -> list[dict[str, A
     return rows
 
 
+def close_stale_admin_punishment_requests(
+    telegram_lookup: dict[Any, Users] | None = None,
+) -> int:
+    if telegram_lookup is None:
+        _, telegram_lookup = build_user_lookups()
+    kept_pending_keys: set[tuple[int, str]] = set()
+    closed_count = 0
+    timestamp = now_ts()
+    query = (
+        PunishmentsRequests.select()
+        .where(PunishmentsRequests.status == "pending")
+        .order_by(PunishmentsRequests.id.desc())
+    )
+    for record in query:
+        owner = lookup_user(telegram_lookup, record.telegram_id)
+        if owner is None or user_scope(owner) != "admins":
+            continue
+
+        reason = None
+        active_count = int(getattr(owner, record.punishment, 0) or 0)
+        pending_key = (owner.id, record.punishment)
+        if active_count <= 0:
+            reason = "Автоматически закрыто: наказание уже снято или отсутствует."
+        elif pending_key in kept_pending_keys:
+            reason = "Автоматически закрыто: дубликат заявки на это наказание."
+        else:
+            kept_pending_keys.add(pending_key)
+            continue
+
+        record.status = "rejected"
+        record.processed_at = record.processed_at or timestamp
+        record.reason = record.reason or reason
+        record.answers_penalty = record.answers_penalty or 0
+        record.save()
+        closed_count += 1
+    return closed_count
+
+
 def admin_inactive_history_query(nickname_lookup: dict[str, Users]):
     known_nicknames = list(nickname_lookup)
     admin_nicknames = [
@@ -1443,7 +1600,7 @@ def admin_active_inactive_page_rows(
     telegram_lookup: dict[Any, Users],
     page: int,
     per_page: int,
-) -> tuple[list[dict[str, Any]], bool]:
+) -> tuple[list[dict[str, Any]], bool, int]:
     rows: list[dict[str, Any]] = []
     now = now_ts()
     query = admin_inactive_history_query(nickname_lookup).where(Inactives.status == "Одобрен")
@@ -1460,7 +1617,8 @@ def admin_active_inactive_page_rows(
                 user_lookup=telegram_lookup,
             )
         )
-    return paginate_list(rows, page, per_page)
+    paginated_rows, has_next = paginate_list(rows, page, per_page)
+    return paginated_rows, has_next, len(rows)
 
 
 def admin_inactive_page_rows(
@@ -1474,6 +1632,7 @@ def admin_inactive_page_rows(
     int,
     list[dict[str, Any]],
     bool,
+    int,
     list[dict[str, Any]],
     bool,
 ]:
@@ -1500,7 +1659,7 @@ def admin_inactive_page_rows(
         if owner is not None:
             pending_rows.append(build_admin_inactive_request_row(record, owner))
 
-    active_rows, active_has_next = admin_active_inactive_page_rows(
+    active_rows, active_has_next, active_total = admin_active_inactive_page_rows(
         nickname_lookup,
         telegram_lookup,
         active_page,
@@ -1523,6 +1682,7 @@ def admin_inactive_page_rows(
         pending_total,
         active_rows,
         active_has_next,
+        active_total,
         history_rows,
         history_has_next,
     )
@@ -1567,6 +1727,7 @@ def admin_reports_page_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]
 
 def admin_punishment_page_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     _, telegram_lookup = build_user_lookups()
+    close_stale_admin_punishment_requests(telegram_lookup)
     pending_rows: list[dict[str, Any]] = []
     history_rows: list[dict[str, Any]] = []
     active_entries: dict[tuple[int, str], PunishmentEntries] = {}
@@ -2587,14 +2748,10 @@ async def administration_inactives_page(
         pending_total,
         active_rows,
         active_has_next,
+        active_total,
         history_rows,
         history_has_next,
     ) = admin_inactive_page_rows(pending_page, active_page, history_page)
-    admins_inactive_count = Users.select().where(
-        Users.role << ROLES,
-        Users.inactiveend.is_null(False),
-        Users.inactiveend >= now_ts(),
-    ).count()
     return render(
         request,
         "administration_inactives.html",
@@ -2610,7 +2767,7 @@ async def administration_inactives_page(
         history_rows=history_rows,
         history_page=history_page,
         history_has_next=history_has_next,
-        admins_inactive_count=admins_inactive_count,
+        admins_inactive_count=active_total,
     )
 
 
