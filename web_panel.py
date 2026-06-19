@@ -1223,6 +1223,24 @@ def admin_inactive_request_rows(user_lookup: dict[Any, Users] | None = None) -> 
     return rows
 
 
+def build_admin_inactive_request_row(request_record: InactiveRequests, owner: Users) -> dict[str, Any]:
+    start_dt = parse_ru_date(request_record.start)
+    end_dt = parse_ru_date(request_record.end)
+    total_days = (end_dt.date() - start_dt.date()).days + 1
+    return {
+        "id": request_record.id,
+        "owner": owner,
+        "reason": request_record.reason,
+        "start": request_record.start,
+        "end": request_record.end,
+        "total_days": total_days,
+        "total_days_text": f"{total_days} {plural_word(total_days, ('день', 'дня', 'дней'))}",
+        "answers": owner.apa,
+        "penalty": request_record.w,
+        "created_at": format_datetime(getattr(request_record, "created_at", None)),
+    }
+
+
 def inactive_request_for_inactive_row(owner: Users | None, record: Inactives) -> InactiveRequests | None:
     request_id = getattr(record, "request_id", None)
     if request_id:
@@ -1397,69 +1415,117 @@ def admin_punishment_request_rows(status: str | None = None) -> list[dict[str, A
     return rows
 
 
-def admin_inactive_page_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    nickname_lookup, telegram_lookup = build_user_lookups()
-    pending_rows: list[dict[str, Any]] = []
-    request_by_id: dict[int, InactiveRequests] = {}
-    request_matches: dict[tuple[str, str, str], list[InactiveRequests]] = {}
-    for request_record in InactiveRequests.select().order_by(InactiveRequests.id.desc()):
-        owner = lookup_user(telegram_lookup, request_record.tgid)
-        if owner is None or user_scope(owner) != "admins":
-            continue
-        request_by_id[request_record.id] = request_record
-        match_key = (str(owner.telegram_id), request_record.start, request_record.end)
-        request_matches.setdefault(match_key, []).append(request_record)
-        if request_record.status == "pending":
-            start_dt = parse_ru_date(request_record.start)
-            end_dt = parse_ru_date(request_record.end)
-            total_days = (end_dt.date() - start_dt.date()).days + 1
-            pending_rows.append(
-                {
-                    "id": request_record.id,
-                    "owner": owner,
-                    "reason": request_record.reason,
-                    "start": request_record.start,
-                    "end": request_record.end,
-                    "total_days": total_days,
-                    "total_days_text": f"{total_days} {plural_word(total_days, ('день', 'дня', 'дней'))}",
-                    "answers": owner.apa,
-                    "penalty": request_record.w,
-                    "created_at": format_datetime(getattr(request_record, "created_at", None)),
-                }
-            )
-
-    active_rows: list[dict[str, Any]] = []
-    history_rows: list[dict[str, Any]] = []
-    now = now_ts()
-    for record in Inactives.select().order_by(Inactives.id.desc()):
-        owner = nickname_lookup.get(record.nickname)
-        row_scope = user_scope(owner) if owner is not None else ("leaders" if record.fraction else "admins")
-        if row_scope != "admins":
-            continue
-        request_record = None
-        request_id = getattr(record, "request_id", None)
-        if request_id:
-            request_record = request_by_id.get(request_id)
-        elif owner is not None:
-            match_key = (str(owner.telegram_id), record.start, record.end)
-            matches = request_matches.get(match_key, [])
-            request_record = matches[0] if len(matches) == 1 else None
-        row = inactive_row_for_admin(
-            record,
-            owner=owner,
-            request_record=request_record,
-            user_lookup=telegram_lookup,
+def admin_inactive_history_query(nickname_lookup: dict[str, Users]):
+    known_nicknames = list(nickname_lookup)
+    admin_nicknames = [
+        user.nickname
+        for user in nickname_lookup.values()
+        if user_scope(user) == "admins"
+    ]
+    legacy_admin_filter = (
+        Inactives.nickname.not_in(known_nicknames)
+        & (Inactives.fraction.is_null(True) | (Inactives.fraction == ""))
+        & (
+            Inactives.role.is_null(True)
+            | (Inactives.role == "")
+            | (Inactives.role << ROLES)
         )
-        history_rows.append(row)
-        if record.status != "Одобрен":
-            continue
+    )
+    return (
+        Inactives.select()
+        .where((Inactives.nickname << admin_nicknames) | legacy_admin_filter)
+        .order_by(Inactives.id.desc())
+    )
+
+
+def admin_active_inactive_page_rows(
+    nickname_lookup: dict[str, Users],
+    telegram_lookup: dict[Any, Users],
+    page: int,
+    per_page: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    rows: list[dict[str, Any]] = []
+    now = now_ts()
+    query = admin_inactive_history_query(nickname_lookup).where(Inactives.status == "Одобрен")
+    for record in query:
         try:
             if inclusive_end_timestamp(parse_ru_date(record.end)) < now:
                 continue
         except Exception:
             continue
-        active_rows.append(row)
-    return pending_rows, active_rows, history_rows
+        rows.append(
+            inactive_row_for_admin(
+                record,
+                owner=nickname_lookup.get(record.nickname),
+                user_lookup=telegram_lookup,
+            )
+        )
+    return paginate_list(rows, page, per_page)
+
+
+def admin_inactive_page_rows(
+    pending_page: int,
+    active_page: int,
+    history_page: int,
+    per_page: int = ADMIN_LIST_PAGE_SIZE,
+) -> tuple[
+    list[dict[str, Any]],
+    bool,
+    int,
+    list[dict[str, Any]],
+    bool,
+    list[dict[str, Any]],
+    bool,
+]:
+    nickname_lookup, telegram_lookup = build_user_lookups()
+    admin_telegram_ids = [
+        str(user.telegram_id)
+        for user in nickname_lookup.values()
+        if user_scope(user) == "admins"
+    ]
+
+    pending_query = (
+        InactiveRequests.select()
+        .where(
+            InactiveRequests.status == "pending",
+            InactiveRequests.tgid << admin_telegram_ids,
+        )
+        .order_by(InactiveRequests.id.desc())
+    )
+    pending_total = pending_query.count()
+    pending_records, pending_has_next = paginate_query(pending_query, pending_page, per_page)
+    pending_rows: list[dict[str, Any]] = []
+    for record in pending_records:
+        owner = lookup_user(telegram_lookup, record.tgid)
+        if owner is not None:
+            pending_rows.append(build_admin_inactive_request_row(record, owner))
+
+    active_rows, active_has_next = admin_active_inactive_page_rows(
+        nickname_lookup,
+        telegram_lookup,
+        active_page,
+        per_page,
+    )
+
+    history_query = admin_inactive_history_query(nickname_lookup)
+    history_records, history_has_next = paginate_query(history_query, history_page, per_page)
+    history_rows = [
+        inactive_row_for_admin(
+            record,
+            owner=nickname_lookup.get(record.nickname),
+            user_lookup=telegram_lookup,
+        )
+        for record in history_records
+    ]
+    return (
+        pending_rows,
+        pending_has_next,
+        pending_total,
+        active_rows,
+        active_has_next,
+        history_rows,
+        history_has_next,
+    )
 
 
 def admin_forms_page_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
@@ -2512,13 +2578,18 @@ async def administration_inactives_page(
     if not can_access_admin_reviews(user):
         set_flash(request, "У вас нет доступа к этому разделу.", "error")
         return redirect("/dashboard")
-    pending_rows_all, active_rows_all, history_rows_all = admin_inactive_page_rows()
     pending_page = normalize_page(pending_page)
     active_page = normalize_page(active_page)
     history_page = normalize_page(history_page)
-    pending_rows, pending_has_next = paginate_list(pending_rows_all, pending_page, ADMIN_LIST_PAGE_SIZE)
-    active_rows, active_has_next = paginate_list(active_rows_all, active_page, ADMIN_LIST_PAGE_SIZE)
-    history_rows, history_has_next = paginate_list(history_rows_all, history_page, ADMIN_LIST_PAGE_SIZE)
+    (
+        pending_rows,
+        pending_has_next,
+        pending_total,
+        active_rows,
+        active_has_next,
+        history_rows,
+        history_has_next,
+    ) = admin_inactive_page_rows(pending_page, active_page, history_page)
     admins_inactive_count = Users.select().where(
         Users.role << ROLES,
         Users.inactiveend.is_null(False),
@@ -2532,7 +2603,7 @@ async def administration_inactives_page(
         pending_rows=pending_rows,
         pending_page=pending_page,
         pending_has_next=pending_has_next,
-        pending_total=len(pending_rows_all),
+        pending_total=pending_total,
         active_rows=active_rows,
         active_list_page=active_page,
         active_has_next=active_has_next,
