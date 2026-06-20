@@ -289,8 +289,10 @@ def set_setting_value(model, key: str, value: int | str) -> None:
 
 
 def sync_sheets(composition: bool = False, removed: bool = False, inactives: bool = False) -> None:
-    with suppress(Exception):
+    try:
         bot_sheets.main(composition=composition, removed=removed, inactives=inactives)
+    except Exception:
+        logger.exception("Unable to schedule Google Sheets sync")
 
 
 def normalize_page(value: int | None) -> int:
@@ -578,7 +580,7 @@ def menu_for_user(user: Users, active_page: str) -> list[dict[str, Any]]:
                 },
             ]
         )
-    for scope in ("leaders", "support", "admins"):
+    for scope in ("leaders", "support"):
         if can_manage_scope(user, scope):
             items.append(
                 {
@@ -727,9 +729,21 @@ def scope_sort_key(scope: str, user: Users) -> tuple[Any, ...]:
     if scope == "leaders":
         return (FRACTIONS.index(user.fraction), user.nickname)
     if scope == "support":
-        return (SUPPORT_ROLES.index(user.role), user.appointed, user.nickname)
+        role_rank = SUPPORT_ROLES.index(user.role) if user.role in SUPPORT_ROLES else len(SUPPORT_ROLES)
+        candidate_rank = 0 if user.role == "Кандидат" else 1
+        return (candidate_rank, role_rank, user.appointed, user.nickname)
     promoted = user.promoted if user.promoted else user.appointed
     return (ROLES.index(user.role), promoted, user.nickname)
+
+
+def support_management_row_stats(user: Users) -> dict[str, str]:
+    appointed_days = max(math.ceil((time.time() - user.appointed) / 86400), 0)
+    transfer_days = int(db_setting(Settings_s, "transferamnt_d", 10))
+    days_left = max(transfer_days - appointed_days, 0)
+    return {
+        "appointed_days_text": f"{appointed_days} {plural_word(appointed_days, ('день', 'дня', 'дней'))}",
+        "days_left_text": f"{days_left} {plural_word(days_left, ('день', 'дня', 'дней'))}",
+    }
 
 
 def penalty_amount_for_user(user: Users, start_dt: datetime, end_dt: datetime) -> int:
@@ -1167,6 +1181,70 @@ def create_removed_entry(user: Users, actor: Users, reason: str) -> None:
     )
 
 
+def close_pending_user_requests(user: Users, actor: Users, reason: str) -> None:
+    timestamp = now_ts()
+    (
+        InactiveRequests.update(
+            status="rejected",
+            processed_by=actor.telegram_id,
+            processed_at=timestamp,
+            process_comment=reason,
+        )
+        .where(
+            InactiveRequests.tgid == str(user.telegram_id),
+            InactiveRequests.status == "pending",
+        )
+        .execute()
+    )
+    (
+        PunishmentsRequests.update(
+            status="rejected",
+            processed_by=actor.telegram_id,
+            processed_at=timestamp,
+            reason=reason,
+            answers_penalty=0,
+        )
+        .where(
+            PunishmentsRequests.telegram_id == str(user.telegram_id),
+            PunishmentsRequests.status == "pending",
+        )
+        .execute()
+    )
+
+
+def close_active_punishment_entries(user: Users, actor: Users, reason: str) -> None:
+    timestamp = now_ts()
+    (
+        PunishmentEntries.update(
+            removed_at=timestamp,
+            removed_by=actor.telegram_id,
+            removed_reason=reason,
+        )
+        .where(
+            PunishmentEntries.user == user,
+            PunishmentEntries.removed_at.is_null(True),
+        )
+        .execute()
+    )
+
+
+def reset_user_as_admin(user: Users, role_value: str) -> None:
+    user.role = role_value
+    user.fraction = None
+    user.appointed = now_ts()
+    user.promoted = None
+    user.objective_completed = 0
+    user.apa = 0
+    user.rebuke = 0
+    user.warn = 0
+    user.verbal = 0
+    user.inactivestart = None
+    user.inactiveend = None
+    user.coins = 0
+    user.coins_last_spend = 0
+    user.save()
+
+
 def target_or_none(user_id: int, scope: str) -> Users | None:
     target = Users.get_or_none(Users.id == user_id)
     if target is None or user_scope(target) != scope:
@@ -1257,6 +1335,7 @@ def admin_user_rows(users: list[Users], selected_user_id: int | None = None) -> 
                 "user": item,
                 "card": user_card(item) if item.id == selected_user_id else None,
                 "appointed_by": appointed_by_label(item, credentials, telegram_lookup),
+                "profile_url": profile_url(item),
             }
         )
     return rows
@@ -2950,11 +3029,14 @@ async def management_page(request: Request, scope: str, user_id: int | None = No
     users = sorted(list(scope_queryset(scope)), key=lambda item: scope_sort_key(scope, item))
     if search:
         users = [item for item in users if search.lower() in item.nickname.lower()]
+    support_row_stats = (
+        {item.id: support_management_row_stats(item) for item in users}
+        if scope == "support"
+        else {}
+    )
     selected = None
     if user_id:
         selected = next((item for item in users if item.id == user_id), None)
-    if selected is None and users:
-        selected = users[0]
     pending_inactive_requests = []
     if scope != "admins":
         for row in (
@@ -3007,12 +3089,113 @@ async def management_page(request: Request, scope: str, user_id: int | None = No
         selected_card=selected_card,
         selected_active_punishments=active_rows,
         selected_punishment_history=history_rows[:20],
+        support_row_stats=support_row_stats,
         pending_inactive_requests=pending_inactive_requests,
         recent_inactives=recent_inactives,
         removed_rows=removed_rows,
         search=search,
         today=today_str(),
+        can_transfer_to_admin=scope in {"leaders", "support"} and can_access_admin_reviews(user),
+        admin_role_options=ROLES,
+        support_role_options=SUPPORT_ROLES,
+        fractions=FRACTIONS,
     )
+
+
+@app.post("/management/{scope}/users/{user_id}/update", name="management_update_user")
+async def management_update_user(
+    request: Request,
+    scope: str,
+    user_id: int,
+    nickname: str = Form(...),
+    role_value: str = Form(""),
+    fraction: str = Form(""),
+    name: str = Form(...),
+    birth_date: str = Form(...),
+    city: str = Form(...),
+    discord_id: str = Form(""),
+    telegram_id: str = Form(""),
+    forum: str = Form(""),
+    vk: str = Form(""),
+    appointed_at: str = Form(...),
+    promoted_at: str = Form(""),
+    inactive_start: str = Form(""),
+    inactive_end: str = Form(""),
+    apa: int = Form(0),
+    objective_completed: int = Form(0),
+    coins: int = Form(0),
+    rebuke: int = Form(0),
+    warn: int = Form(0),
+    verbal: int = Form(0),
+    csrf_token: str = Form(...),
+):
+    actor = require_auth(request)
+    if actor is None:
+        return redirect("/login")
+    if scope not in {"leaders", "support"} or not can_manage_scope(actor, scope):
+        return redirect("/dashboard")
+    redirect_url = f"/management/{scope}?user_id={user_id}"
+    if not validate_csrf(request, csrf_token):
+        set_flash(request, "Сессия формы устарела.", "error")
+        return redirect(redirect_url)
+    target = target_or_none(user_id, scope)
+    if target is None:
+        set_flash(request, "Пользователь не найден.", "error")
+        return redirect(f"/management/{scope}")
+    duplicate = Users.get_or_none(Users.nickname == nickname.strip(), Users.id != user_id)
+    if duplicate:
+        set_flash(request, "Пользователь с таким ником уже существует.", "error")
+        return redirect(redirect_url)
+    if scope == "leaders" and fraction not in FRACTIONS:
+        set_flash(request, "Выберите корректную фракцию.", "error")
+        return redirect(redirect_url)
+    if scope == "support" and role_value not in SUPPORT_ROLES:
+        set_flash(request, "Выберите корректную должность АП.", "error")
+        return redirect(redirect_url)
+    try:
+        appointed_dt = parse_datetime_local(appointed_at)
+        promoted_dt = parse_datetime_local(promoted_at)
+        if appointed_dt is None:
+            raise ValueError
+        target.nickname = nickname.strip()
+        target.name = name.strip()
+        target.age = int(parse_iso_date(birth_date).timestamp())
+        target.city = city.strip()
+        target.discord_id = parse_optional_int(discord_id)
+        target.telegram_id = parse_optional_int(telegram_id)
+        target.forum = forum.strip()
+        target.vk = vk.strip()
+        target.appointed = int(appointed_dt.timestamp())
+        target.promoted = int(promoted_dt.timestamp()) if promoted_dt else None
+        target.apa = max(apa, 0)
+        target.objective_completed = max(objective_completed, 0)
+        target.coins = max(coins, 0)
+        target.rebuke = max(rebuke, 0)
+        target.warn = max(warn, 0)
+        target.verbal = max(verbal, 0)
+        if inactive_start or inactive_end:
+            if not inactive_start or not inactive_end:
+                raise ValueError
+            start_dt = parse_iso_date(inactive_start)
+            end_dt = parse_iso_date(inactive_end)
+            if end_dt < start_dt:
+                raise ValueError
+            target.inactivestart = formatedtotts(start_dt.strftime("%d.%m.%Y"))
+            target.inactiveend = inclusive_end_timestamp(end_dt)
+        else:
+            target.inactivestart = None
+            target.inactiveend = None
+    except ValueError:
+        set_flash(request, "Проверьте даты и числовые поля.", "error")
+        return redirect(redirect_url)
+    if scope == "leaders":
+        assign_role(target, "__leader__", fraction)
+    else:
+        assign_role(target, role_value, None)
+    target.save()
+    sync_sheets(composition=True, inactives=True)
+    set_flash(request, "Информация пользователя обновлена.", "success")
+    return redirect(f"/management/{scope}?user_id={target.id}")
 
 
 @app.post("/management/{scope}/metric", name="management_change_metric")
@@ -3194,6 +3377,53 @@ async def management_dismiss_user(
     sync_sheets(composition=True, removed=True, inactives=True)
     set_flash(request, "Пользователь снят с должности.", "success")
     return redirect(f"/management/{scope}")
+
+
+@app.post("/management/{scope}/transfer-admin", name="management_transfer_to_admin")
+async def management_transfer_to_admin(
+    request: Request,
+    scope: str,
+    user_id: int = Form(...),
+    role_value: str = Form(...),
+    csrf_token: str = Form(...),
+):
+    actor = require_auth(request)
+    if actor is None:
+        return redirect("/login")
+    if scope not in {"leaders", "support"}:
+        return redirect("/dashboard")
+    if not can_manage_scope(actor, scope) or not can_access_admin_reviews(actor):
+        return redirect("/dashboard")
+    if not validate_csrf(request, csrf_token):
+        set_flash(request, "Сессия формы устарела.", "error")
+        return redirect(f"/management/{scope}?user_id={user_id}")
+    target = target_or_none(user_id, scope)
+    if target is None:
+        set_flash(request, "Пользователь не найден.", "error")
+        return redirect(f"/management/{scope}")
+    if role_value not in ROLES:
+        set_flash(request, "Выберите корректную должность администрации.", "error")
+        return redirect(f"/management/{scope}?user_id={user_id}")
+
+    cleanup_reason = "Пользователь переведён в администрацию."
+    create_removed_entry(target, actor, "На админку.")
+    close_pending_user_requests(target, actor, cleanup_reason)
+    close_active_punishment_entries(target, actor, cleanup_reason)
+    Inactives.delete().where(Inactives.nickname == target.nickname).execute()
+    reset_user_as_admin(target, role_value)
+
+    credentials, _ = WebCredentials.get_or_create(user=target)
+    if not credentials.password_hash:
+        credentials.invite_token = generate_token()
+        credentials.invite_created_by = actor.telegram_id
+        credentials.invite_created_at = now_ts()
+        credentials.invite_used_at = None
+        credentials.save()
+        set_generated_link(request, target.nickname, build_invite_url(request, credentials.invite_token))
+
+    sync_sheets(composition=True, removed=True, inactives=True)
+    set_flash(request, "Пользователь переведён в администрацию.", "success")
+    return redirect(f"/administration/users?user_id={target.id}")
 
 
 @app.post("/management/{scope}/review/inactive/{request_id}", name="review_inactive_request")

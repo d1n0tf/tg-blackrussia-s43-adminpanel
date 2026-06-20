@@ -15,11 +15,23 @@ try:
     google_sheets = gspread.service_account(filename="credits.json")
 except FileNotFoundError:
     google_sheets = None
+except Exception:
+    google_sheets = None
+    logger.exception("Unable to initialize Google Sheets client")
 _lastupdate = 0
+_update_interval = 60
+_update_lock = threading.Lock()
+_update_pending = {"composition": False, "removed": False, "inactives": False}
+_update_worker_running = False
+_credentials_warning_logged = False
 
 
 def getSheetsByID(sheetid: str):
+    global _credentials_warning_logged
     if google_sheets is None or not sheetid or len(sheetid.strip()) < 20:
+        if google_sheets is None and not _credentials_warning_logged:
+            logger.warning("Google Sheets sync skipped: credits.json is missing or invalid")
+            _credentials_warning_logged = True
         return
     sh = google_sheets.open_by_key(sheetid)
     return sh.get_worksheet(0), sh.get_worksheet(1), sh.get_worksheet(2)
@@ -84,21 +96,60 @@ def search(sheetid: str, value) -> list | None:
 
 
 def main(composition: bool = False, removed: bool = False, inactives: bool = False):
-    global _lastupdate
-    if time.time() - _lastupdate < 60:
+    global _update_worker_running
+    if not any((composition, removed, inactives)):
         return
-    _lastupdate = time.time()
+    with _update_lock:
+        _update_pending["composition"] = _update_pending["composition"] or composition
+        _update_pending["removed"] = _update_pending["removed"] or removed
+        _update_pending["inactives"] = _update_pending["inactives"] or inactives
+        if _update_worker_running:
+            return
+        _update_worker_running = True
     try:
         threading.Thread(
-            target=fill,
-            args=(
-                composition,
-                removed,
-                inactives,
-            ),
+            target=_run_pending_updates,
+            daemon=True,
         ).start()
     except Exception:
+        with _update_lock:
+            _update_worker_running = False
         logger.exception(traceback.format_exc())
+
+
+def _run_pending_updates():
+    global _lastupdate, _update_worker_running
+    try:
+        while True:
+            with _update_lock:
+                composition = _update_pending["composition"]
+                removed = _update_pending["removed"]
+                inactives = _update_pending["inactives"]
+                _update_pending["composition"] = False
+                _update_pending["removed"] = False
+                _update_pending["inactives"] = False
+            if not any((composition, removed, inactives)):
+                with _update_lock:
+                    if not any(_update_pending.values()):
+                        _update_worker_running = False
+                        return
+                continue
+            delay = _update_interval - (time.time() - _lastupdate)
+            if delay > 0:
+                time.sleep(delay)
+                with _update_lock:
+                    composition = composition or _update_pending["composition"]
+                    removed = removed or _update_pending["removed"]
+                    inactives = inactives or _update_pending["inactives"]
+                    _update_pending["composition"] = False
+                    _update_pending["removed"] = False
+                    _update_pending["inactives"] = False
+            _lastupdate = time.time()
+            fill(composition, removed, inactives)
+    except Exception:
+        logger.exception(traceback.format_exc())
+        with _update_lock:
+            _update_worker_running = False
 
 
 def fill(composition: bool, removed: bool, inactives: bool):
@@ -152,7 +203,7 @@ def fill(composition: bool, removed: bool, inactives: bool):
             fillinactives_l(inactives_l, inactivesdata_l)
             fillinactives_a(inactives_a, inactivesdata_a)
     except gspread.exceptions.APIError:
-        pass
+        logger.exception("Google Sheets API error while filling sheets")
     except Exception:
         logger.exception(traceback.format_exc())
 

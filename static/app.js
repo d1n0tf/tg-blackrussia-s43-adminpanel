@@ -548,16 +548,6 @@
             return;
         }
 
-        const target = event.target;
-        const tagName = target?.tagName;
-        if (
-            target?.isContentEditable ||
-            tagName === "TEXTAREA" ||
-            (tagName === "INPUT" && target.type !== "file")
-        ) {
-            return;
-        }
-
         const pastedImages = extractImagesFromClipboard(event);
         if (!pastedImages.length) {
             return;
