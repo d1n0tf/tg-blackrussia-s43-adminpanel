@@ -798,6 +798,46 @@ textarea {
     margin-bottom: 1rem;
 }
 
+.server-swatchers-card {
+    display: grid;
+    gap: 1rem;
+}
+
+.server-swatchers-card .section-head {
+    align-items: flex-start;
+    margin-bottom: 0;
+}
+
+.server-swatchers-card .section-head p {
+    max-width: 48rem;
+    margin: 0.35rem 0 0;
+    color: var(--muted);
+}
+
+.compact-metric {
+    min-width: 12rem;
+    padding: 0.85rem 1rem;
+}
+
+.swatcher-add-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.8rem;
+    align-items: end;
+    padding: 1rem;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.62);
+}
+
+.swatcher-add-form .button {
+    min-height: 3.2rem;
+}
+
+.muted-text {
+    color: var(--muted);
+}
+
 .panel-subform,
 .panel-subcard {
     background: rgba(255, 255, 255, 0.7);
@@ -1143,6 +1183,19 @@ textarea {
 
     .section-head {
         gap: 0.45rem;
+    }
+
+    .server-swatchers-card .section-head {
+        align-items: stretch;
+    }
+
+    .server-swatchers-card .compact-metric {
+        width: 100%;
+    }
+
+    .swatcher-add-form {
+        grid-template-columns: 1fr;
+        padding: 0.85rem;
     }
 
     .hero-card,

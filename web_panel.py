@@ -450,6 +450,8 @@ def accessible_search_scopes(user: Users) -> list[str]:
         scopes.append("leaders")
     if user.role in {"Куратор агентов поддержки", "Заместитель КАП"}:
         scopes.append("support")
+    if has_special_access(user, "swatcher") and "support" not in scopes:
+        scopes.append("support")
     return scopes
 
 
@@ -459,6 +461,44 @@ def can_use_global_search(user: Users) -> bool:
 
 def profile_url(user: Users) -> str:
     return f"/p/{quote(user.nickname, safe='')}"
+
+
+def has_valid_telegram_id(user: Users) -> bool:
+    try:
+        return int(user.telegram_id) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def build_swatcher_rows(users: list[Users] | None = None) -> list[dict[str, Any]]:
+    if users is None:
+        _, telegram_lookup = build_user_lookups()
+    else:
+        telegram_lookup = {}
+        for user in users:
+            telegram_lookup[user.telegram_id] = user
+            telegram_lookup[str(user.telegram_id)] = user
+    grouped: dict[str, dict[str, Any]] = {}
+    for access in SpecialAccesses.select().where(SpecialAccesses.role == "swatcher"):
+        telegram_id = str(access.telegram_id)
+        row = grouped.setdefault(
+            telegram_id,
+            {
+                "telegram_id": telegram_id,
+                "access_ids": [],
+                "user": lookup_user(telegram_lookup, telegram_id),
+            },
+        )
+        row["access_ids"].append(access.id)
+
+    rows = list(grouped.values())
+    rows.sort(
+        key=lambda row: (
+            row["user"] is None,
+            (row["user"].nickname if row["user"] else row["telegram_id"]).lower(),
+        )
+    )
+    return rows
 
 
 def can_manage_user_profile(actor: Users, target: Users) -> bool:
@@ -3786,6 +3826,7 @@ async def server_page(request: Request, edit_user_id: int | None = None):
         users=users,
         credentials=credentials,
         edit_user=edit_user,
+        swatchers=build_swatcher_rows(users),
         settings=settings,
         role_options=["__leader__", *SUPPORT_ROLES, *ROLES],
         fractions=FRACTIONS,
@@ -3825,6 +3866,67 @@ async def update_server_settings(
     set_setting_value(Sheets, "a", sheet_admins.strip())
     set_flash(request, "Настройки сервера обновлены.", "success")
     return redirect("/server")
+
+
+@app.post("/server/swatchers/add", name="add_server_swatcher")
+async def add_server_swatcher(
+    request: Request,
+    nickname: str = Form(...),
+    csrf_token: str = Form(...),
+):
+    actor = require_auth(request)
+    if actor is None:
+        return redirect("/login")
+    if not can_access_server(actor):
+        return redirect("/dashboard")
+    if not validate_csrf(request, csrf_token):
+        set_flash(request, "Сессия формы устарела.", "error")
+        return redirect("/server#swatchers")
+
+    target = Users.get_or_none(Users.nickname == nickname.strip())
+    if target is None:
+        set_flash(request, "Пользователь с таким ником не найден.", "error")
+        return redirect("/server#swatchers")
+    if not has_valid_telegram_id(target):
+        set_flash(request, "У пользователя не указан Telegram ID, доступ следящего АП выдать нельзя.", "error")
+        return redirect("/server#swatchers")
+    if has_special_access(target, "swatcher"):
+        set_flash(request, "У пользователя уже есть доступ следящего АП.", "info")
+        return redirect("/server#swatchers")
+
+    SpecialAccesses.create(telegram_id=str(target.telegram_id), role="swatcher")
+    set_flash(request, f"{target.nickname} получил доступ следящего АП.", "success")
+    return redirect("/server#swatchers")
+
+
+@app.post("/server/swatchers/remove", name="remove_server_swatcher")
+async def remove_server_swatcher(
+    request: Request,
+    telegram_id: str = Form(...),
+    csrf_token: str = Form(...),
+):
+    actor = require_auth(request)
+    if actor is None:
+        return redirect("/login")
+    if not can_access_server(actor):
+        return redirect("/dashboard")
+    if not validate_csrf(request, csrf_token):
+        set_flash(request, "Сессия формы устарела.", "error")
+        return redirect("/server#swatchers")
+
+    removed_count = (
+        SpecialAccesses.delete()
+        .where(
+            SpecialAccesses.telegram_id == str(telegram_id).strip(),
+            SpecialAccesses.role == "swatcher",
+        )
+        .execute()
+    )
+    if removed_count:
+        set_flash(request, "Доступ следящего АП удалён.", "success")
+    else:
+        set_flash(request, "Доступ следящего АП уже был удалён.", "info")
+    return redirect("/server#swatchers")
 
 
 def parse_optional_int(value: str) -> int:
