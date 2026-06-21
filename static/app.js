@@ -43,6 +43,9 @@
         if (!form || form.dataset.noLive !== undefined) {
             return false;
         }
+        if (form.enctype === "multipart/form-data" || form.querySelector('input[type="file"]')) {
+            return false;
+        }
         if (form.target && form.target !== "_self") {
             return false;
         }

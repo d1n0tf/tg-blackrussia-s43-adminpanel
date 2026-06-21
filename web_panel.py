@@ -10,7 +10,6 @@ import mimetypes
 import os
 import re
 import secrets
-import shutil
 import time
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta
@@ -20,10 +19,12 @@ from urllib.parse import quote, urlencode
 
 import validators
 from fastapi import FastAPI, Form, Request, UploadFile
+from fastapi.exception_handlers import http_exception_handler as fastapi_http_exception_handler
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from loguru import logger
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from Bot import sheets as bot_sheets
@@ -58,6 +59,15 @@ SESSION_MAX_AGE = SESSION_DAYS * 24 * 60 * 60
 SECRET_KEY = os.getenv("FASTAPI_SECRET_KEY") or TOKEN or "fastapi-dev-secret"
 USER_LIST_PAGE_SIZE = 25
 ADMIN_LIST_PAGE_SIZE = 100
+UPLOAD_MAX_FILE_MB = int(os.getenv("UPLOAD_MAX_FILE_MB", "1024"))
+UPLOAD_MAX_TOTAL_MB = int(os.getenv("UPLOAD_MAX_TOTAL_MB", "4096"))
+UPLOAD_MAX_FILE_BYTES = UPLOAD_MAX_FILE_MB * 1024 * 1024
+UPLOAD_MAX_TOTAL_BYTES = UPLOAD_MAX_TOTAL_MB * 1024 * 1024
+UPLOAD_COPY_CHUNK_BYTES = 1024 * 1024
+
+
+class UploadValidationError(ValueError):
+    pass
 
 
 def static_version() -> int:
@@ -680,25 +690,69 @@ def serialize_attachments(items: list[dict[str, Any]]) -> str | None:
     return json_dumps(items) if items else None
 
 
+def format_file_size(size: int) -> str:
+    if size >= 1024 * 1024 * 1024:
+        return f"{size / (1024 * 1024 * 1024):.1f} ГБ"
+    if size >= 1024 * 1024:
+        return f"{size / (1024 * 1024):.0f} МБ"
+    if size >= 1024:
+        return f"{size / 1024:.0f} КБ"
+    return f"{size} Б"
+
+
+def remove_stored_uploads(items: list[dict[str, Any]]) -> None:
+    for item in items:
+        if item.get("type") != "file":
+            continue
+        path = item.get("path")
+        if not path:
+            continue
+        filepath = (UPLOADS_DIR / path).resolve()
+        if UPLOADS_DIR.resolve() in filepath.parents:
+            filepath.unlink(missing_ok=True)
+
+
 def save_uploads(files: list[UploadFile]) -> list[dict[str, Any]]:
     stored: list[dict[str, Any]] = []
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    total_size = 0
     for upload in files:
         if not upload.filename:
             continue
         extension = Path(upload.filename).suffix
         filename = f"{secrets.token_hex(16)}{extension}"
         destination = UPLOADS_DIR / filename
-        with destination.open("wb") as buffer:
-            shutil.copyfileobj(upload.file, buffer)
-        stored.append(
-            {
-                "type": "file",
-                "name": upload.filename,
-                "path": filename,
-                "content_type": upload.content_type or mimetypes.guess_type(upload.filename)[0] or "",
-            }
-        )
+        file_size = 0
+        try:
+            with destination.open("wb") as buffer:
+                while True:
+                    chunk = upload.file.read(UPLOAD_COPY_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    file_size += len(chunk)
+                    total_size += len(chunk)
+                    if file_size > UPLOAD_MAX_FILE_BYTES:
+                        raise UploadValidationError(
+                            f"Файл «{upload.filename}» слишком большой. Максимум на один файл: {format_file_size(UPLOAD_MAX_FILE_BYTES)}."
+                        )
+                    if total_size > UPLOAD_MAX_TOTAL_BYTES:
+                        raise UploadValidationError(
+                            f"Суммарный размер файлов слишком большой. Максимум за одну отправку: {format_file_size(UPLOAD_MAX_TOTAL_BYTES)}."
+                        )
+                    buffer.write(chunk)
+            stored.append(
+                {
+                    "type": "file",
+                    "name": upload.filename,
+                    "path": filename,
+                    "content_type": upload.content_type or mimetypes.guess_type(upload.filename)[0] or "",
+                    "size": file_size,
+                }
+            )
+        except Exception:
+            destination.unlink(missing_ok=True)
+            remove_stored_uploads(stored)
+            raise
     return stored
 
 
@@ -1833,6 +1887,20 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code == 413:
+        if "session" in request.scope:
+            set_flash(
+                request,
+                f"Файлы слишком большие для загрузки. Лимит приложения: {format_file_size(UPLOAD_MAX_TOTAL_BYTES)} за одну отправку.",
+                "error",
+            )
+        fallback = "/forms" if request.url.path.startswith("/forms") else "/reports"
+        return redirect(fallback)
+    return await fastapi_http_exception_handler(request, exc)
+
+
 @app.middleware("http")
 async def db_session_middleware(request: Request, call_next):
     if dbhandle.is_closed():
@@ -2407,7 +2475,11 @@ async def create_report(
     except ValueError:
         set_flash(request, "Проверьте дату отчёта.", "error")
         return redirect("/reports")
-    files = save_uploads(attachments or [])
+    try:
+        files = save_uploads(attachments or [])
+    except UploadValidationError as error:
+        set_flash(request, str(error), "error")
+        return redirect("/reports")
     if not files:
         set_flash(request, "Нужно приложить хотя бы один файл или скриншот.", "error")
         return redirect("/reports")
@@ -2470,7 +2542,11 @@ async def create_form_request(
     if not form_text.strip().startswith("/"):
         set_flash(request, 'Форма должна начинаться с команды, например "/ban Nick 7 reason".', "error")
         return redirect("/forms")
-    proofs = save_uploads(proof_files or [])
+    try:
+        proofs = save_uploads(proof_files or [])
+    except UploadValidationError as error:
+        set_flash(request, str(error), "error")
+        return redirect("/forms")
     proofs.extend(normalize_links(proof_links))
     if not proofs:
         set_flash(request, "Добавьте хотя бы одно доказательство: файл или ссылку.", "error")

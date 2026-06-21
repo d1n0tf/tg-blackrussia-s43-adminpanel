@@ -4,7 +4,7 @@
 <section class="grid two-cols">
     <article class="panel-card">
         <h3>Новый отчёт</h3>
-        <form method="post" action="{{ request.url_for('create_report') }}" class="stack-form" enctype="multipart/form-data">
+        <form method="post" action="/reports" class="stack-form" enctype="multipart/form-data" data-no-live>
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="split-fields">
                 <label>

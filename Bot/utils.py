@@ -245,4 +245,4 @@ def calcage(born):
 
 
 def calcdateofbirth(born):
-    return datetime.utcfromtimestamp(born).date().strftime("%d.%m.%Y")
+    return datetime.utcfromtimestamp(born - 1).date().strftime("%d.%m.%Y")
