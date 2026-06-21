@@ -1864,7 +1864,7 @@ async def lifespan(_: FastAPI):
     ensure_bootstrap_invites()
     sync_sheets(composition=True, removed=True, inactives=True)
     bot_task = None
-    if os.getenv("ENABLE_TELEGRAM_BOT") == "1":
+    if os.getenv("ENABLE_TELEGRAM_BOT") in ("1", None):
         from Bot import Bot
 
         bot_task = asyncio.create_task(Bot().run())
