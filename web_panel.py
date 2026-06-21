@@ -64,6 +64,8 @@ UPLOAD_MAX_TOTAL_MB = int(os.getenv("UPLOAD_MAX_TOTAL_MB", "4096"))
 UPLOAD_MAX_FILE_BYTES = UPLOAD_MAX_FILE_MB * 1024 * 1024
 UPLOAD_MAX_TOTAL_BYTES = UPLOAD_MAX_TOTAL_MB * 1024 * 1024
 UPLOAD_COPY_CHUNK_BYTES = 1024 * 1024
+UPLOAD_MAX_FILES = int(os.getenv("UPLOAD_MAX_FILES", "50"))
+UPLOAD_MAX_FIELDS = int(os.getenv("UPLOAD_MAX_FIELDS", "50"))
 
 
 class UploadValidationError(ValueError):
@@ -710,6 +712,35 @@ def remove_stored_uploads(items: list[dict[str, Any]]) -> None:
         filepath = (UPLOADS_DIR / path).resolve()
         if UPLOADS_DIR.resolve() in filepath.parents:
             filepath.unlink(missing_ok=True)
+
+
+async def parse_upload_form(request: Request):
+    try:
+        return await request.form(
+            max_files=UPLOAD_MAX_FILES,
+            max_fields=UPLOAD_MAX_FIELDS,
+            max_part_size=UPLOAD_MAX_TOTAL_BYTES,
+        )
+    except StarletteHTTPException as error:
+        detail = str(getattr(error, "detail", "") or "")
+        if "Part exceeded maximum size" in detail:
+            set_flash(
+                request,
+                f"Форма загрузки слишком большая. Лимит приложения: {format_file_size(UPLOAD_MAX_TOTAL_BYTES)} за одну отправку.",
+                "error",
+            )
+        else:
+            set_flash(request, "Не удалось прочитать загруженные файлы. Попробуйте отправить ещё раз.", "error")
+        return None
+
+
+def form_text_value(form: Any, name: str) -> str:
+    value = form.get(name)
+    return value if isinstance(value, str) else ""
+
+
+def form_uploads(form: Any, name: str) -> list[Any]:
+    return [item for item in form.getlist(name) if getattr(item, "filename", None)]
 
 
 def save_uploads(files: list[UploadFile]) -> list[dict[str, Any]]:
@@ -2451,19 +2482,19 @@ async def reports_page(request: Request, history_page: int = 1):
 
 
 @app.post("/reports", name="create_report")
-async def create_report(
-    request: Request,
-    report_type: str = Form(...),
-    report_date: str = Form(...),
-    csrf_token: str = Form(...),
-    attachments: list[UploadFile] | None = None,
-):
+async def create_report(request: Request):
     user = require_auth(request)
     if user is None:
         return redirect("/login")
     if not report_scope_allowed(user):
         set_flash(request, "Этот раздел доступен только администрации.", "error")
         return redirect("/dashboard")
+    form = await parse_upload_form(request)
+    if form is None:
+        return redirect("/reports")
+    report_type = form_text_value(form, "report_type")
+    report_date = form_text_value(form, "report_date")
+    csrf_token = form_text_value(form, "csrf_token")
     if not validate_csrf(request, csrf_token):
         set_flash(request, "Сессия формы устарела.", "error")
         return redirect("/reports")
@@ -2476,7 +2507,7 @@ async def create_report(
         set_flash(request, "Проверьте дату отчёта.", "error")
         return redirect("/reports")
     try:
-        files = save_uploads(attachments or [])
+        files = save_uploads(form_uploads(form, "attachments"))
     except UploadValidationError as error:
         set_flash(request, str(error), "error")
         return redirect("/reports")
@@ -2523,19 +2554,19 @@ async def forms_page(request: Request, history_page: int = 1):
 
 
 @app.post("/forms", name="create_form_request")
-async def create_form_request(
-    request: Request,
-    form_text: str = Form(...),
-    proof_links: str = Form(""),
-    csrf_token: str = Form(...),
-    proof_files: list[UploadFile] | None = None,
-):
+async def create_form_request(request: Request):
     user = require_auth(request)
     if user is None:
         return redirect("/login")
     if not report_scope_allowed(user):
         set_flash(request, "Этот раздел доступен только администрации.", "error")
         return redirect("/dashboard")
+    form = await parse_upload_form(request)
+    if form is None:
+        return redirect("/forms")
+    form_text = form_text_value(form, "form_text")
+    proof_links = form_text_value(form, "proof_links")
+    csrf_token = form_text_value(form, "csrf_token")
     if not validate_csrf(request, csrf_token):
         set_flash(request, "Сессия формы устарела.", "error")
         return redirect("/forms")
@@ -2543,7 +2574,7 @@ async def create_form_request(
         set_flash(request, 'Форма должна начинаться с команды, например "/ban Nick 7 reason".', "error")
         return redirect("/forms")
     try:
-        proofs = save_uploads(proof_files or [])
+        proofs = save_uploads(form_uploads(form, "proof_files"))
     except UploadValidationError as error:
         set_flash(request, str(error), "error")
         return redirect("/forms")
