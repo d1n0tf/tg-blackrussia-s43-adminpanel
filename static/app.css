@@ -798,6 +798,14 @@ textarea {
     margin-bottom: 1rem;
 }
 
+.section-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
 .server-swatchers-card {
     display: grid;
     gap: 1rem;
@@ -880,7 +888,8 @@ textarea {
     max-width: 14rem;
 }
 
-.admin-create-trigger {
+.admin-create-trigger,
+.management-create-trigger {
     flex: 0 0 auto;
     max-width: none;
     white-space: nowrap;
@@ -1183,6 +1192,11 @@ textarea {
 
     .section-head {
         gap: 0.45rem;
+    }
+
+    .section-actions {
+        width: 100%;
+        justify-content: space-between;
     }
 
     .server-swatchers-card .section-head {

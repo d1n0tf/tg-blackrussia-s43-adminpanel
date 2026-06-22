@@ -4,8 +4,60 @@
 <section class="panel-card management-table-panel management-{{ scope }}">
     <div class="section-head">
         <h3>{{ 'СПИСОК ЛИДЕРОВ СЕРВЕРА' if scope == 'leaders' else ('СПИСОК АГЕНТОВ ПОДДЕРЖКИ' if scope == 'support' else 'СПИСОК АДМИНИСТРАЦИИ СЕРВЕРА') }}</h3>
-        <span>{{ users|length }} чел.</span>
+        <div class="section-actions">
+            <span>{{ users|length }} чел.</span>
+            {% if scope in ["leaders", "support"] %}
+                <button type="button" class="button button-primary review-trigger management-create-trigger" data-review-toggle="management-user-create" aria-expanded="false">{{ 'Добавить лидера' if scope == 'leaders' else 'Добавить АП' }}</button>
+            {% endif %}
+        </div>
     </div>
+
+    {% if scope in ["leaders", "support"] %}
+        <div data-review-panel="management-user-create" data-live-key="management-user-create" hidden>
+            <div class="review-body review-body-wide">
+                <form method="post" action="{{ request.url_for('management_create_user', scope=scope) }}" class="stack-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <div class="split-fields">
+                        <label><span>Ник</span><input type="text" name="nickname" required></label>
+                        {% if scope == "leaders" %}
+                            <label>
+                                <span>Фракция</span>
+                                <select name="fraction" required>
+                                    {% for fraction in fractions %}
+                                        <option value="{{ fraction }}">{{ fraction }}</option>
+                                    {% endfor %}
+                                </select>
+                            </label>
+                        {% else %}
+                            <label>
+                                <span>Должность</span>
+                                <select name="role_value" required>
+                                    {% for role in support_role_options %}
+                                        <option value="{{ role }}">{{ role }}</option>
+                                    {% endfor %}
+                                </select>
+                            </label>
+                        {% endif %}
+                    </div>
+                    <div class="split-fields">
+                        <label><span>Имя</span><input type="text" name="name" required></label>
+                        <label><span>Дата рождения</span><input type="date" name="birth_date" required></label>
+                    </div>
+                    <label><span>Город</span><input type="text" name="city" required></label>
+                    <div class="split-fields">
+                        <label><span>Discord ID</span><input type="text" name="discord_id"></label>
+                        <label><span>Telegram ID</span><input type="text" name="telegram_id" required></label>
+                    </div>
+                    <div class="split-fields">
+                        <label><span>ВКонтакте</span><input type="text" name="vk"></label>
+                        <label><span>Форум</span><input type="text" name="forum"></label>
+                    </div>
+                    <button type="submit" class="button button-primary">Создать ссылку</button>
+                </form>
+            </div>
+        </div>
+    {% endif %}
+
     <form method="get" action="{{ request.url_for('management_page', scope=scope) }}" class="inline-form management-search-form">
         <input type="text" name="search" value="{{ search }}" placeholder="Поиск по нику">
         <button type="submit" class="button button-secondary">Найти</button>

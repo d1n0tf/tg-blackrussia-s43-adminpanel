@@ -3249,6 +3249,94 @@ async def management_page(request: Request, scope: str, user_id: int | None = No
     )
 
 
+@app.post("/management/{scope}/users/create", name="management_create_user")
+async def management_create_user(
+    request: Request,
+    scope: str,
+    nickname: str = Form(...),
+    role_value: str = Form(""),
+    fraction: str = Form(""),
+    name: str = Form(...),
+    birth_date: str = Form(...),
+    city: str = Form(...),
+    discord_id: str = Form(""),
+    telegram_id: str = Form(""),
+    forum: str = Form(""),
+    vk: str = Form(""),
+    csrf_token: str = Form(...),
+):
+    actor = require_auth(request)
+    if actor is None:
+        return redirect("/login")
+    if scope not in {"leaders", "support"} or not can_manage_scope(actor, scope):
+        return redirect("/dashboard")
+    redirect_url = f"/management/{scope}"
+    if not validate_csrf(request, csrf_token):
+        set_flash(request, "Сессия формы устарела.", "error")
+        return redirect(redirect_url)
+
+    nickname = nickname.strip()
+    if Users.get_or_none(Users.nickname == nickname):
+        set_flash(request, "Пользователь с таким ником уже существует.", "error")
+        return redirect(redirect_url)
+    if scope == "leaders" and fraction not in FRACTIONS:
+        set_flash(request, "Выберите корректную фракцию.", "error")
+        return redirect(redirect_url)
+    if scope == "support" and role_value not in SUPPORT_ROLES:
+        set_flash(request, "Выберите корректную должность АП.", "error")
+        return redirect(redirect_url)
+
+    try:
+        birth_ts = int(parse_iso_date(birth_date).timestamp())
+        telegram_numeric = parse_optional_int(telegram_id)
+        discord_numeric = parse_optional_int(discord_id)
+    except ValueError:
+        set_flash(request, "Проверьте дату рождения и числовые поля.", "error")
+        return redirect(redirect_url)
+
+    target = Users.create(
+        nickname=nickname,
+        role=None,
+        fraction=None,
+        appointed=now_ts(),
+        promoted=None,
+        objective_completed=0,
+        apa=0,
+        rebuke=0,
+        warn=0,
+        verbal=0,
+        inactivestart=None,
+        inactiveend=None,
+        name=name.strip(),
+        age=birth_ts,
+        city=city.strip(),
+        discord_id=discord_numeric,
+        telegram_id=telegram_numeric,
+        forum=forum.strip(),
+        vk=vk.strip(),
+        coins=0,
+        coins_last_spend=0,
+    )
+    if scope == "leaders":
+        assign_role(target, "__leader__", fraction)
+        success_text = "Лидер добавлен. Ссылка ниже одноразовая."
+    else:
+        assign_role(target, role_value, None)
+        success_text = "Агент поддержки добавлен. Ссылка ниже одноразовая."
+    target.save()
+
+    credentials, _ = WebCredentials.get_or_create(user=target)
+    credentials.invite_token = generate_token()
+    credentials.invite_created_by = actor.telegram_id
+    credentials.invite_created_at = now_ts()
+    credentials.invite_used_at = None
+    credentials.save()
+    set_generated_link(request, target.nickname, build_invite_url(request, credentials.invite_token))
+    sync_sheets(composition=True)
+    set_flash(request, success_text, "success")
+    return redirect(f"/management/{scope}?user_id={target.id}")
+
+
 @app.post("/management/{scope}/users/{user_id}/update", name="management_update_user")
 async def management_update_user(
     request: Request,
