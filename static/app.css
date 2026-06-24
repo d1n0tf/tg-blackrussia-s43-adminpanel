@@ -718,6 +718,40 @@ textarea {
     word-break: break-word;
 }
 
+.upload-progress {
+    display: grid;
+    gap: 0.55rem;
+    border: 1px solid rgba(182, 92, 53, 0.2);
+    border-radius: 16px;
+    padding: 0.85rem 1rem;
+    background: rgba(182, 92, 53, 0.08);
+}
+
+.upload-progress[hidden] {
+    display: none;
+}
+
+.upload-progress-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.upload-progress-head strong {
+    color: var(--text);
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.upload-progress progress {
+    width: 100%;
+    height: 0.7rem;
+    accent-color: var(--accent);
+}
+
 .table {
     width: 100%;
     border-collapse: collapse;

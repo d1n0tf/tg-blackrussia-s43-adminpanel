@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
+from zoneinfo import ZoneInfo
 
 import validators
 from fastapi import FastAPI, Form, Request, UploadFile
@@ -28,7 +29,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from Bot import sheets as bot_sheets
-from Bot.utils import calcage, calcdateofbirth, formatedtotts, formatts, plural_word
+from Bot.utils import plural_word
 from config import ADMIN, FRACTIONS, LEADERS_TIME_LEFT, ROLES, STRUCTURES, SUPPORT_ROLES, TOKEN
 from db import (
     Forms,
@@ -66,6 +67,8 @@ UPLOAD_MAX_TOTAL_BYTES = UPLOAD_MAX_TOTAL_MB * 1024 * 1024
 UPLOAD_COPY_CHUNK_BYTES = 1024 * 1024
 UPLOAD_MAX_FILES = int(os.getenv("UPLOAD_MAX_FILES", "50"))
 UPLOAD_MAX_FIELDS = int(os.getenv("UPLOAD_MAX_FIELDS", "50"))
+UPLOAD_FORM_OVERHEAD_BYTES = int(os.getenv("UPLOAD_FORM_OVERHEAD_MB", "16")) * 1024 * 1024
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 
 class UploadValidationError(ValueError):
@@ -151,46 +154,78 @@ REMOVED_STRUCT = {
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
+def moscow_now() -> datetime:
+    return datetime.now(MOSCOW_TZ)
+
+
+def moscow_from_timestamp(timestamp: int | float) -> datetime:
+    return datetime.fromtimestamp(timestamp, MOSCOW_TZ)
+
+
+def ensure_moscow_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=MOSCOW_TZ)
+    return value.astimezone(MOSCOW_TZ)
+
+
 def now_ts() -> int:
     return int(time.time())
 
 
 def today_str() -> str:
-    return datetime.now().strftime("%Y-%m-%d")
+    return moscow_now().strftime("%Y-%m-%d")
 
 
 def parse_iso_date(value: str) -> datetime:
-    return datetime.strptime(value, "%Y-%m-%d")
+    return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=MOSCOW_TZ)
 
 
 def parse_ru_date(value: str) -> datetime:
-    return datetime.strptime(value, "%d.%m.%Y")
+    return datetime.strptime(value, "%d.%m.%Y").replace(tzinfo=MOSCOW_TZ)
 
 
 def inclusive_end_timestamp(date_value: datetime) -> int:
-    return int((date_value + timedelta(days=1)).timestamp()) - 1
+    return int((ensure_moscow_datetime(date_value) + timedelta(days=1)).timestamp()) - 1
+
+
+def formatts(timestamp: int | float) -> str:
+    return moscow_from_timestamp(timestamp).strftime("%d.%m.%Y")
+
+
+def formatedtotts(formatted: str) -> int:
+    return int(parse_ru_date(formatted).timestamp())
+
+
+def calcage(born: int | float) -> int:
+    born_date = moscow_from_timestamp(born).date()
+    today = moscow_now().date()
+    return today.year - born_date.year - ((today.month, today.day) < (born_date.month, born_date.day))
+
+
+def calcdateofbirth(born: int | float) -> str:
+    return moscow_from_timestamp(born).strftime("%d.%m.%Y")
 
 
 def format_datetime(timestamp: int | None) -> str:
     if not timestamp:
         return "-"
-    return datetime.fromtimestamp(timestamp).strftime("%d.%m.%Y / %H:%M")
+    return moscow_from_timestamp(timestamp).strftime("%d.%m.%Y / %H:%M")
 
 
 def format_appointment(timestamp: int) -> str:
-    return datetime.fromtimestamp(timestamp).strftime("%d.%m.%Y / %H:%M")
+    return moscow_from_timestamp(timestamp).strftime("%d.%m.%Y / %H:%M")
 
 
 def datetime_to_input(timestamp: int | None) -> str:
     if not timestamp:
         return ""
-    return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+    return moscow_from_timestamp(timestamp).strftime("%Y-%m-%d")
 
 
 def datetime_local_to_input(timestamp: int | None) -> str:
     if not timestamp:
         return ""
-    return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%dT%H:%M")
+    return moscow_from_timestamp(timestamp).strftime("%Y-%m-%dT%H:%M")
 
 
 def parse_datetime_local(value: str) -> datetime | None:
@@ -198,7 +233,7 @@ def parse_datetime_local(value: str) -> datetime | None:
     if not cleaned:
         return None
     try:
-        return datetime.strptime(cleaned, "%Y-%m-%dT%H:%M")
+        return datetime.strptime(cleaned, "%Y-%m-%dT%H:%M").replace(tzinfo=MOSCOW_TZ)
     except ValueError:
         return parse_iso_date(cleaned)
 
@@ -755,6 +790,19 @@ def remove_stored_uploads(items: list[dict[str, Any]]) -> None:
 
 
 async def parse_upload_form(request: Request):
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            request_size = int(content_length)
+        except ValueError:
+            request_size = 0
+        if request_size > UPLOAD_MAX_TOTAL_BYTES + UPLOAD_FORM_OVERHEAD_BYTES:
+            set_flash(
+                request,
+                f"Файлы слишком большие для загрузки. Лимит приложения: {format_file_size(UPLOAD_MAX_TOTAL_BYTES)} за одну отправку.",
+                "error",
+            )
+            return None
     try:
         return await request.form(
             max_files=UPLOAD_MAX_FILES,
@@ -772,6 +820,14 @@ async def parse_upload_form(request: Request):
         else:
             set_flash(request, "Не удалось прочитать загруженные файлы. Попробуйте отправить ещё раз.", "error")
         return None
+
+
+async def close_upload_form(form: Any) -> None:
+    close = getattr(form, "close", None)
+    if close is None:
+        return
+    with suppress(Exception):
+        await close()
 
 
 def form_text_value(form: Any, name: str) -> str:
@@ -1226,6 +1282,11 @@ def render(
             "generated_link": pop_generated_link(request),
             "csrf_token": ensure_csrf_token(request),
             "static_version": static_version(),
+            "upload_max_file_bytes": UPLOAD_MAX_FILE_BYTES,
+            "upload_max_total_bytes": UPLOAD_MAX_TOTAL_BYTES,
+            "upload_max_files": UPLOAD_MAX_FILES,
+            "upload_max_file_label": format_file_size(UPLOAD_MAX_FILE_BYTES),
+            "upload_max_total_label": format_file_size(UPLOAD_MAX_TOTAL_BYTES),
             "query_with": lambda **updates: query_with(request, **updates),
             "global_search_scopes": accessible_search_scopes(user) if user else [],
             "global_search_query": request.query_params.get("q", "") if active_page == "search" else "",
@@ -2532,37 +2593,41 @@ async def create_report(request: Request):
     form = await parse_upload_form(request)
     if form is None:
         return redirect("/reports")
-    report_type = form_text_value(form, "report_type")
-    report_date = form_text_value(form, "report_date")
-    csrf_token = form_text_value(form, "csrf_token")
-    if not validate_csrf(request, csrf_token):
-        set_flash(request, "Сессия формы устарела.", "error")
-        return redirect("/reports")
-    if report_type not in {"objective", "additional"}:
-        set_flash(request, "Выберите корректный тип отчёта.", "error")
-        return redirect("/reports")
     try:
-        parse_iso_date(report_date)
-    except ValueError:
-        set_flash(request, "Проверьте дату отчёта.", "error")
+        report_type = form_text_value(form, "report_type")
+        report_date = form_text_value(form, "report_date")
+        csrf_token = form_text_value(form, "csrf_token")
+        if not validate_csrf(request, csrf_token):
+            set_flash(request, "Сессия формы устарела.", "error")
+            return redirect("/reports")
+        if report_type not in {"objective", "additional"}:
+            set_flash(request, "Выберите корректный тип отчёта.", "error")
+            return redirect("/reports")
+        try:
+            parse_iso_date(report_date)
+        except ValueError:
+            set_flash(request, "Проверьте дату отчёта.", "error")
+            return redirect("/reports")
+        try:
+            files = await asyncio.to_thread(save_uploads, form_uploads(form, "attachments"))
+        except UploadValidationError as error:
+            set_flash(request, str(error), "error")
+            return redirect("/reports")
+        if not files:
+            set_flash(request, "Нужно приложить хотя бы один файл или скриншот.", "error")
+            return redirect("/reports")
+        Reports.create(
+            user=user,
+            report_type=report_type,
+            report_date=report_date,
+            attachments=serialize_attachments(files),
+            status="pending",
+            created_at=now_ts(),
+        )
+        set_flash(request, "Отчёт отправлен на проверку.", "success")
         return redirect("/reports")
-    try:
-        files = save_uploads(form_uploads(form, "attachments"))
-    except UploadValidationError as error:
-        set_flash(request, str(error), "error")
-        return redirect("/reports")
-    if not files:
-        set_flash(request, "Нужно приложить хотя бы один файл или скриншот.", "error")
-        return redirect("/reports")
-    Reports.create(
-        user=user,
-        report_type=report_type,
-        report_date=report_date,
-        attachments=serialize_attachments(files),
-        status="pending",
-    )
-    set_flash(request, "Отчёт отправлен на проверку.", "success")
-    return redirect("/reports")
+    finally:
+        await close_upload_form(form)
 
 
 @app.get("/forms", response_class=HTMLResponse, name="forms_page")
@@ -2604,33 +2669,36 @@ async def create_form_request(request: Request):
     form = await parse_upload_form(request)
     if form is None:
         return redirect("/forms")
-    form_text = form_text_value(form, "form_text")
-    proof_links = form_text_value(form, "proof_links")
-    csrf_token = form_text_value(form, "csrf_token")
-    if not validate_csrf(request, csrf_token):
-        set_flash(request, "Сессия формы устарела.", "error")
-        return redirect("/forms")
-    if not form_text.strip().startswith("/"):
-        set_flash(request, 'Форма должна начинаться с команды, например "/ban Nick 7 reason".', "error")
-        return redirect("/forms")
     try:
-        proofs = save_uploads(form_uploads(form, "proof_files"))
-    except UploadValidationError as error:
-        set_flash(request, str(error), "error")
+        form_text = form_text_value(form, "form_text")
+        proof_links = form_text_value(form, "proof_links")
+        csrf_token = form_text_value(form, "csrf_token")
+        if not validate_csrf(request, csrf_token):
+            set_flash(request, "Сессия формы устарела.", "error")
+            return redirect("/forms")
+        if not form_text.strip().startswith("/"):
+            set_flash(request, 'Форма должна начинаться с команды, например "/ban Nick 7 reason".', "error")
+            return redirect("/forms")
+        try:
+            proofs = await asyncio.to_thread(save_uploads, form_uploads(form, "proof_files"))
+        except UploadValidationError as error:
+            set_flash(request, str(error), "error")
+            return redirect("/forms")
+        proofs.extend(normalize_links(proof_links))
+        if not proofs:
+            set_flash(request, "Добавьте хотя бы одно доказательство: файл или ссылку.", "error")
+            return redirect("/forms")
+        Forms.create(
+            form=form_text.strip(),
+            proofs=serialize_attachments(proofs),
+            fromtgid=str(user.telegram_id),
+            status="pending",
+            created_at=now_ts(),
+        )
+        set_flash(request, "Форма отправлена на проверку.", "success")
         return redirect("/forms")
-    proofs.extend(normalize_links(proof_links))
-    if not proofs:
-        set_flash(request, "Добавьте хотя бы одно доказательство: файл или ссылку.", "error")
-        return redirect("/forms")
-    Forms.create(
-        form=form_text.strip(),
-        proofs=serialize_attachments(proofs),
-        fromtgid=str(user.telegram_id),
-        status="pending",
-        created_at=now_ts(),
-    )
-    set_flash(request, "Форма отправлена на проверку.", "success")
-    return redirect("/forms")
+    finally:
+        await close_upload_form(form)
 
 
 @app.get("/punishments", response_class=HTMLResponse, name="punishments_page")

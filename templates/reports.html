@@ -4,7 +4,16 @@
 <section class="grid two-cols">
     <article class="panel-card">
         <h3>Новый отчёт</h3>
-        <form method="post" action="/reports" class="stack-form" enctype="multipart/form-data" data-no-live>
+        <form
+            method="post"
+            action="/reports"
+            class="stack-form"
+            enctype="multipart/form-data"
+            data-upload-form
+            data-max-file-bytes="{{ upload_max_file_bytes }}"
+            data-max-total-bytes="{{ upload_max_total_bytes }}"
+            data-max-files="{{ upload_max_files }}"
+        >
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="split-fields">
                 <label>
@@ -29,6 +38,13 @@
                 <span class="paste-status" data-paste-status>Можно и дальше добавлять обычные файлы через выбор.</span>
             </div>
             <div class="attachment-preview" data-attachment-preview hidden></div>
+            <div class="upload-progress" data-upload-progress-wrap hidden>
+                <div class="upload-progress-head">
+                    <strong data-upload-status>Подготовка загрузки...</strong>
+                    <span data-upload-progress-value>0%</span>
+                </div>
+                <progress value="0" max="100" data-upload-progress></progress>
+            </div>
             <button type="submit" class="button button-primary">Отправить отчёт</button>
         </form>
     </article>
@@ -37,6 +53,7 @@
         <h3>Подсказка</h3>
         <div class="callout">
             <p>Для норматива можно прикреплять скриншот или набор файлов, а при проверке куратор укажет, сколько ответов зачесть и считать ли отчёт днём норматива.</p>
+            <p>Лимит загрузки: до {{ upload_max_file_label }} на файл и до {{ upload_max_total_label }} за одну отправку. Если телефон долго грузит видео, лучше отправлять его по стабильному Wi-Fi.</p>
         </div>
     </article>
 </section>

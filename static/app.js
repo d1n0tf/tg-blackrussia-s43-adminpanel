@@ -342,6 +342,140 @@
         return `${(size / (1024 * 1024)).toFixed(1)} МБ`;
     };
 
+    const findUploadUi = (form) => ({
+        wrap: form.querySelector("[data-upload-progress-wrap]"),
+        status: form.querySelector("[data-upload-status]"),
+        progress: form.querySelector("[data-upload-progress]"),
+        value: form.querySelector("[data-upload-progress-value]"),
+    });
+
+    const setUploadProgress = (form, percent, text) => {
+        const ui = findUploadUi(form);
+        if (!ui.wrap || !ui.progress || !ui.value || !ui.status) {
+            return;
+        }
+        ui.wrap.hidden = false;
+        const safePercent = Math.max(0, Math.min(Math.round(percent), 100));
+        ui.progress.value = safePercent;
+        ui.value.textContent = `${safePercent}%`;
+        if (text) {
+            ui.status.textContent = text;
+        }
+    };
+
+    const selectedUploadFiles = (form) => Array.from(form.querySelectorAll('input[type="file"]'))
+        .flatMap((input) => Array.from(input.files || []));
+
+    const validateUploadSelection = (form) => {
+        const files = selectedUploadFiles(form);
+        const maxFiles = Number(form.dataset.maxFiles || 0);
+        const maxFileBytes = Number(form.dataset.maxFileBytes || 0);
+        const maxTotalBytes = Number(form.dataset.maxTotalBytes || 0);
+        const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+
+        if (maxFiles && files.length > maxFiles) {
+            return `Слишком много файлов: ${files.length}. Максимум: ${maxFiles}.`;
+        }
+        if (maxFileBytes) {
+            const oversized = files.find((file) => file.size > maxFileBytes);
+            if (oversized) {
+                return `Файл «${oversized.name}» слишком большой: ${formatFileSize(oversized.size)}. Максимум: ${formatFileSize(maxFileBytes)}.`;
+            }
+        }
+        if (maxTotalBytes && totalBytes > maxTotalBytes) {
+            return `Суммарный размер файлов ${formatFileSize(totalBytes)} больше лимита ${formatFileSize(maxTotalBytes)}.`;
+        }
+        return "";
+    };
+
+    const submitUploadForm = (form, submitter) => new Promise((resolve) => {
+        const validationError = validateUploadSelection(form);
+        if (validationError) {
+            setUploadProgress(form, 0, validationError);
+            resolve(false);
+            return;
+        }
+
+        const xhr = new XMLHttpRequest();
+        const body = buildFormData(form, submitter);
+        const requestedUrl = new URL(submitter?.getAttribute("formaction") || form.getAttribute("action") || window.location.href, window.location.href);
+        const uiState = captureUiState();
+
+        setLoadingState(true);
+        setUploadProgress(form, 0, "Загрузка началась. Не закрывайте страницу...");
+
+        xhr.open((form.getAttribute("method") || "POST").toUpperCase(), requestedUrl.toString(), true);
+        xhr.setRequestHeader("Accept", "text/html, */*;q=0.1");
+        xhr.setRequestHeader("X-Requested-With", "fetch");
+        xhr.timeout = Number(form.dataset.uploadTimeout || 0);
+
+        xhr.upload.addEventListener("progress", (event) => {
+            if (!event.lengthComputable) {
+                const uploaded = formatFileSize(event.loaded || 0);
+                setUploadProgress(form, 0, `Загружено ${uploaded}. Ждём ответа сервера...`);
+                return;
+            }
+            const percent = (event.loaded / event.total) * 100;
+            setUploadProgress(form, percent, `Загружено ${formatFileSize(event.loaded)} из ${formatFileSize(event.total)}`);
+        });
+
+        xhr.addEventListener("load", () => {
+            setLoadingState(false);
+            if (xhr.status >= 400) {
+                setUploadProgress(
+                    form,
+                    0,
+                    `Сервер отклонил загрузку (${xhr.status}). Попробуйте файл меньше или повторите позже.`
+                );
+                resolve(false);
+                return;
+            }
+
+            const contentType = xhr.getResponseHeader("content-type") || "";
+            if (!contentType.includes("text/html")) {
+                window.location.assign(xhr.responseURL || requestedUrl.toString());
+                resolve(true);
+                return;
+            }
+
+            setUploadProgress(form, 100, "Загрузка завершена. Обновляем страницу...");
+            const nextDocument = new DOMParser().parseFromString(xhr.responseText, "text/html");
+            swapDocument(nextDocument);
+            restoreUiState(uiState);
+            window.history.replaceState({}, "", xhr.responseURL || requestedUrl.toString());
+            window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+            resolve(true);
+        });
+
+        xhr.addEventListener("error", () => {
+            setLoadingState(false);
+            setUploadProgress(
+                form,
+                0,
+                "Соединение оборвалось во время загрузки. Проверьте интернет и попробуйте отправить ещё раз."
+            );
+            resolve(false);
+        });
+
+        xhr.addEventListener("timeout", () => {
+            setLoadingState(false);
+            setUploadProgress(
+                form,
+                0,
+                "Истекло время ожидания загрузки. Попробуйте стабильный Wi-Fi или файл меньшего размера."
+            );
+            resolve(false);
+        });
+
+        xhr.addEventListener("abort", () => {
+            setLoadingState(false);
+            setUploadProgress(form, 0, "Загрузка отменена.");
+            resolve(false);
+        });
+
+        xhr.send(body);
+    });
+
     const updateReportAttachmentPreview = () => {
         const reportUi = findReportUi();
         if (!reportUi) {
@@ -487,6 +621,19 @@
 
     document.addEventListener("submit", async (event) => {
         const form = event.target;
+        if (form instanceof HTMLFormElement && form.dataset.uploadForm !== undefined) {
+            event.preventDefault();
+            const submitter = event.submitter || null;
+            if (submitter) {
+                submitter.disabled = true;
+            }
+            const completed = await submitUploadForm(form, submitter);
+            if (!completed && submitter && document.body.contains(submitter)) {
+                submitter.disabled = false;
+            }
+            return;
+        }
+
         if (!(form instanceof HTMLFormElement) || !shouldHandleForm(form)) {
             return;
         }
