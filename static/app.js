@@ -576,6 +576,123 @@
         document.body.removeChild(area);
     };
 
+    const HTML2CANVAS_URL = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
+    let html2canvasRequest = null;
+
+    const loadHtml2Canvas = () => {
+        if (typeof window.html2canvas === "function") {
+            return Promise.resolve(window.html2canvas);
+        }
+        if (html2canvasRequest) {
+            return html2canvasRequest;
+        }
+
+        html2canvasRequest = new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = HTML2CANVAS_URL;
+            script.async = true;
+            script.onload = () => {
+                if (typeof window.html2canvas === "function") {
+                    resolve(window.html2canvas);
+                    return;
+                }
+                reject(new Error("html2canvas is not available"));
+            };
+            script.onerror = () => reject(new Error("Failed to load html2canvas"));
+            document.head.appendChild(script);
+        }).catch((error) => {
+            html2canvasRequest = null;
+            throw error;
+        });
+
+        return html2canvasRequest;
+    };
+
+    const nextFrame = () => new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+
+    const canvasToPngBlob = (canvas) => new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+            if (blob) {
+                resolve(blob);
+                return;
+            }
+            reject(new Error("Canvas export failed"));
+        }, "image/png", 1);
+    });
+
+    const copyPngBlob = async (blob) => {
+        if (!navigator.clipboard || !window.ClipboardItem || !window.isSecureContext) {
+            return false;
+        }
+        await navigator.clipboard.write([
+            new ClipboardItem({ [blob.type]: blob }),
+        ]);
+        return true;
+    };
+
+    const downloadBlob = (blob, filename) => {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename || "norm-check.png";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.setTimeout(() => URL.revokeObjectURL(url), 500);
+    };
+
+    const buildNormScreenshotStage = (source) => {
+        const stage = document.createElement("div");
+        stage.className = "norm-screenshot-capture public-report-page";
+
+        const shell = document.createElement("main");
+        shell.className = "public-report-shell";
+
+        const clone = source.cloneNode(true);
+        clone.querySelectorAll("[data-screenshot-ignore]").forEach((node) => node.remove());
+        shell.appendChild(clone);
+        stage.appendChild(shell);
+        document.body.appendChild(stage);
+        return stage;
+    };
+
+    const captureNormScreenshot = async (button) => {
+        const source = document.querySelector("[data-norm-screenshot-source]");
+        if (!source) {
+            throw new Error("Screenshot source is missing");
+        }
+
+        const html2canvas = await loadHtml2Canvas();
+        if (document.fonts?.ready) {
+            await document.fonts.ready;
+        }
+
+        const stage = buildNormScreenshotStage(source);
+        try {
+            await nextFrame();
+            const canvas = await html2canvas(stage, {
+                backgroundColor: null,
+                scale: 1.5,
+                useCORS: true,
+                windowWidth: stage.scrollWidth,
+                windowHeight: stage.scrollHeight,
+                width: stage.scrollWidth,
+                height: stage.scrollHeight,
+                scrollX: 0,
+                scrollY: 0,
+            });
+            const blob = await canvasToPngBlob(canvas);
+            const filename = source.dataset.screenshotFilename || "norm-check.png";
+            const copied = await copyPngBlob(blob).catch(() => false);
+            if (!copied) {
+                downloadBlob(blob, filename);
+            }
+            button.dataset.screenshotResult = copied ? "clipboard" : "download";
+        } finally {
+            stage.remove();
+        }
+    };
+
     const normStatusLabels = {
         completed: "Выполнен норматив",
         no_norm: "Нет нормы",
@@ -1168,6 +1285,33 @@
             return;
         }
 
+        const screenshotButton = event.target.closest("[data-norm-screenshot-button]");
+        if (screenshotButton) {
+            event.preventDefault();
+            const originalText = screenshotButton.dataset.screenshotOriginal || screenshotButton.textContent;
+            screenshotButton.dataset.screenshotOriginal = originalText;
+            screenshotButton.textContent = "Готовлю...";
+            screenshotButton.disabled = true;
+            try {
+                await captureNormScreenshot(screenshotButton);
+                screenshotButton.textContent = screenshotButton.dataset.screenshotResult === "clipboard"
+                    ? "Скрин в буфере"
+                    : "PNG скачан";
+                screenshotButton.classList.add("is-copied");
+            } catch {
+                screenshotButton.textContent = "Ошибка скрина";
+                screenshotButton.classList.remove("is-copied");
+            } finally {
+                screenshotButton.disabled = false;
+            }
+            window.clearTimeout(screenshotButton._screenshotTimer);
+            screenshotButton._screenshotTimer = window.setTimeout(() => {
+                screenshotButton.textContent = screenshotButton.dataset.screenshotOriginal || originalText;
+                screenshotButton.classList.remove("is-copied");
+            }, 2200);
+            return;
+        }
+
         const normStatusButton = event.target.closest("[data-norm-status-button]");
         if (normStatusButton) {
             event.preventDefault();
@@ -1250,6 +1394,14 @@
 
     document.addEventListener("submit", async (event) => {
         const form = event.target;
+        if (form instanceof HTMLFormElement && form.dataset.confirmSubmit) {
+            const confirmed = window.confirm(form.dataset.confirmSubmit);
+            if (!confirmed) {
+                event.preventDefault();
+                return;
+            }
+        }
+
         if (form instanceof HTMLFormElement && form.dataset.uploadForm !== undefined) {
             event.preventDefault();
             const submitter = event.submitter || null;

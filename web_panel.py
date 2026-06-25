@@ -3884,6 +3884,35 @@ async def administration_share_norm_check(
     }
 
 
+@app.post("/administration/norm-checks/{check_id}/delete", name="administration_delete_norm_check")
+async def administration_delete_norm_check(
+    request: Request,
+    check_id: int,
+    csrf_token: str = Form(...),
+):
+    actor = require_auth(request)
+    if actor is None:
+        return redirect("/login")
+    if not can_access_admin_reviews(actor):
+        set_flash(request, "У вас нет доступа к этому разделу.", "error")
+        return redirect("/dashboard")
+    if not validate_csrf(request, csrf_token):
+        set_flash(request, "Сессия формы устарела.", "error")
+        return redirect(admin_redirect_path("norm-checks"))
+    check = NormativeChecks.get_or_none(NormativeChecks.id == check_id)
+    if check is None:
+        set_flash(request, "Проверка норматива не найдена.", "error")
+        return redirect(admin_redirect_path("norm-checks"))
+
+    norm_date_label = iso_date_label(check.norm_date)
+    with dbhandle.atomic():
+        NormativeCheckEntries.delete().where(NormativeCheckEntries.check == check).execute()
+        check.delete_instance()
+
+    set_flash(request, f"Проверка норматива за {norm_date_label} удалена.", "success")
+    return redirect(admin_redirect_path("norm-checks"))
+
+
 @app.get("/adm/n{check_id:int}", response_class=HTMLResponse, name="public_norm_check_detail")
 async def public_norm_check_detail(request: Request, check_id: int):
     check = NormativeChecks.get_or_none(NormativeChecks.id == check_id)

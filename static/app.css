@@ -840,6 +840,14 @@ textarea {
     flex-wrap: wrap;
 }
 
+.inline-action-form {
+    margin: 0;
+}
+
+.inline-action-form .button {
+    width: auto;
+}
+
 .server-swatchers-card {
     display: grid;
     gap: 1rem;
@@ -985,6 +993,11 @@ textarea {
 .section-actions .button.is-copied {
     background: rgba(29, 125, 87, 0.12);
     color: var(--success);
+}
+
+.norm-detail-report {
+    display: grid;
+    gap: 1.25rem;
 }
 
 .review-trigger.is-open {
@@ -1382,7 +1395,7 @@ textarea {
 }
 
 .public-report-shell {
-    width: min(1180px, calc(100% - 3rem));
+    width: min(1680px, calc(100% - 2rem));
     margin: 0 auto;
     padding: clamp(1rem, 3vw, 2rem) 0 2.5rem;
     display: grid;
@@ -1396,6 +1409,77 @@ textarea {
 .public-report-page .section-copy {
     margin: 0.35rem 0 0;
     color: var(--muted);
+}
+
+.public-report-page .norm-detail-grid {
+    grid-template-columns: minmax(46rem, 1.35fr) minmax(22rem, 0.75fr) minmax(28rem, 0.9fr);
+    gap: 1rem;
+}
+
+.public-report-page .panel-card {
+    min-width: 0;
+}
+
+.public-report-page .table-wrap,
+.public-report-page .stack-list {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.public-report-page .table {
+    min-width: 46rem;
+}
+
+.public-report-page .table th,
+.public-report-page .table td,
+.public-report-page .stack-item strong,
+.public-report-page .stack-item span {
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
+.public-report-page .table th:nth-child(2),
+.public-report-page .table td:nth-child(2) {
+    min-width: 18rem;
+}
+
+.public-report-page .stack-item {
+    display: grid;
+    grid-template-columns: minmax(10rem, 0.75fr) max-content;
+    align-items: center;
+    gap: 0.45rem 1rem;
+    min-width: max-content;
+}
+
+.norm-screenshot-capture {
+    position: fixed;
+    left: calc(100vw + 24px);
+    top: 0;
+    width: 1680px;
+    padding: 24px;
+    color: var(--text);
+    background:
+        radial-gradient(circle at 18% 10%, rgba(182, 92, 53, 0.16), transparent 30%),
+        radial-gradient(circle at 86% 18%, rgba(47, 111, 95, 0.12), transparent 28%),
+        linear-gradient(135deg, #fbf7f0 0%, #f4eadc 45%, #eef4ef 100%);
+    pointer-events: none;
+    z-index: 2147483647;
+}
+
+.norm-screenshot-capture .public-report-shell {
+    width: 100%;
+    max-width: none;
+    padding: 0;
+}
+
+.norm-screenshot-capture .norm-detail-report {
+    display: grid;
+    gap: 1.25rem;
+}
+
+.norm-screenshot-capture [data-screenshot-ignore] {
+    display: none;
 }
 
 .auth-card {
@@ -2029,6 +2113,90 @@ textarea {
     .copy-inline {
         width: 100%;
         justify-content: center;
+    }
+}
+
+@media (max-width: 1080px) {
+    .public-report-shell {
+        width: calc(100% - 1rem);
+        max-width: 1680px;
+    }
+
+    .public-report-page .norm-detail-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .public-report-page .table-wrap,
+    .public-report-page .stack-list {
+        overflow-x: auto;
+    }
+
+    .public-report-page .table {
+        display: table;
+        width: 100%;
+        min-width: 46rem;
+    }
+
+    .public-report-page .table thead {
+        display: table-header-group;
+    }
+
+    .public-report-page .table tbody {
+        display: table-row-group;
+    }
+
+    .public-report-page .table tr {
+        display: table-row;
+        padding: 0;
+        border-bottom: 0;
+    }
+
+    .public-report-page .table th,
+    .public-report-page .table td {
+        display: table-cell;
+        width: auto;
+        padding: 0.8rem 0.75rem;
+        border-bottom: 1px solid var(--line);
+        white-space: nowrap;
+        overflow-wrap: normal;
+        word-break: normal;
+    }
+
+    .public-report-page .table td::before {
+        content: none;
+    }
+
+    .public-report-page .stack-item,
+    .public-report-page .stack-item *,
+    .public-report-page .table td > * {
+        min-width: 0;
+        white-space: nowrap;
+        overflow-wrap: normal;
+        word-break: normal;
+    }
+
+    .public-report-page .stack-item {
+        grid-template-columns: minmax(10rem, 0.75fr) max-content;
+        min-width: max-content;
+    }
+}
+
+@media (max-width: 520px) {
+    .public-report-shell {
+        width: calc(100% - 0.75rem);
+        gap: 0.75rem;
+    }
+
+    .public-report-page .panel-card {
+        padding: 0.85rem;
+    }
+
+    .public-report-page .table {
+        min-width: 42rem;
+    }
+
+    .public-report-page .stack-item {
+        grid-template-columns: max-content max-content;
     }
 }
 

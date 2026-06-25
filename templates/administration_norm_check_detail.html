@@ -1,13 +1,19 @@
 {% extends "base.html" %}
 
 {% block content %}
+<div class="norm-detail-report" data-norm-screenshot-source data-screenshot-filename="norm-check-{{ detail.summary.id }}.png">
 <section class="panel-card">
     <div class="section-head">
         <div>
             <h3>ПРОВЕРКА НОРМАТИВА АДМИНИСТРАЦИИ</h3>
             <p class="section-copy">Итог проверки за {{ detail.summary.norm_date_label }}.</p>
         </div>
-        <div class="section-actions">
+        <div class="section-actions" data-screenshot-ignore>
+            <button
+                type="button"
+                class="button button-secondary"
+                data-norm-screenshot-button
+            >Скрин</button>
             <button
                 type="button"
                 class="button button-secondary"
@@ -16,6 +22,15 @@
                 data-csrf-token="{{ csrf_token }}"
             >Поделиться</button>
             <a href="{{ request.url_for('administration_norm_check_edit_page', check_id=detail.summary.id) }}" class="button button-secondary">Изменить</a>
+            <form
+                method="post"
+                action="{{ request.url_for('administration_delete_norm_check', check_id=detail.summary.id) }}"
+                class="inline-action-form"
+                data-confirm-submit="Удалить этот отчёт полностью? Публичная ссылка /adm/n{{ detail.summary.id }} тоже перестанет работать."
+            >
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="button button-danger">Удалить</button>
+            </form>
             <a href="{{ request.url_for('administration_norm_checks_page') }}" class="button button-secondary">К списку</a>
         </div>
     </div>
@@ -101,4 +116,5 @@
         {% endif %}
     </article>
 </section>
+</div>
 {% endblock %}
