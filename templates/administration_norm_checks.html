@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% set is_norm_edit = norm_check_edit is defined and norm_check_edit %}
+{% if is_norm_edit %}
+    {% set norm_form_action = request.url_for('administration_update_norm_check', check_id=norm_check_edit.id) %}
+{% else %}
+    {% set norm_form_action = request.url_for('administration_create_norm_check') %}
+{% endif %}
 <section class="panel-card">
     <div class="section-head">
         <div>
@@ -21,22 +27,25 @@
     </form>
 </section>
 
-<section class="panel-card" data-review-panel="admin-norm-check-create" data-live-key="admin-norm-check-create" hidden>
+<section class="panel-card" data-review-panel="admin-norm-check-create" data-live-key="admin-norm-check-create" {% if not is_norm_edit %}hidden{% endif %}>
     <div class="section-head">
-        <h3>Новая проверка</h3>
+        <h3>{% if is_norm_edit %}Изменение проверки #{{ norm_check_edit.id }}{% else %}Новая проверка{% endif %}</h3>
         <span>Администраторы: {{ norm_admin_rows|length }}</span>
     </div>
     {% if norm_admin_rows %}
-        <form method="post" action="{{ request.url_for('administration_create_norm_check') }}" class="stack-form" data-norm-check-form data-norm-answer-url="{{ request.url_for('administration_apply_norm_answers') }}" data-norm-objective-url="{{ request.url_for('administration_apply_norm_objective') }}">
+        <form method="post" action="{{ norm_form_action }}" class="stack-form" data-norm-check-form data-norm-answer-url="{{ request.url_for('administration_apply_norm_answers') }}" data-norm-objective-url="{{ request.url_for('administration_apply_norm_objective') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="norm-check-toolbar">
                 <label class="norm-check-date">
                     <span>Дата проверяемого норматива</span>
-                    <input type="date" name="norm_date" value="{{ selected_norm_date or today }}" required data-norm-date>
+                    <input type="date" name="norm_date" value="{{ selected_norm_date or today }}" required data-norm-date {% if is_norm_edit %}readonly{% endif %}>
                 </label>
                 <div class="norm-check-actions" aria-label="Действия проверки норматива">
                     <button type="button" class="button button-primary" data-norm-action="result">Результат</button>
-                    <button type="submit" class="button button-primary">Сохранить проверку</button>
+                    <button type="submit" class="button button-primary">{% if is_norm_edit %}Сохранить изменения{% else %}Сохранить проверку{% endif %}</button>
+                    {% if is_norm_edit %}
+                        <a href="{{ request.url_for('administration_norm_check_detail', check_id=norm_check_edit.id) }}" class="button button-secondary">Отмена</a>
+                    {% endif %}
                 </div>
             </div>
 
@@ -49,14 +58,14 @@
                     <div class="norm-check-admin-list">
                         {% for row in norm_admin_rows %}
                             {% set admin = row.user %}
-                            <div class="norm-check-row" data-norm-row data-user-id="{{ admin.id }}" data-norm-nick="{{ admin.nickname }}" data-inactive-periods="{{ row.inactive_periods }}">
+                            <div class="norm-check-row" data-norm-row data-user-id="{{ admin.id }}" data-norm-nick="{{ admin.nickname }}" data-inactive-periods="{{ row.inactive_periods }}" data-norm-preview-order="{{ row.preview_order }}">
                                 <input type="hidden" name="user_id" value="{{ admin.id }}">
-                                <input type="hidden" name="objective_{{ admin.id }}" value="0" data-norm-objective>
-                                <input type="hidden" name="applied_answers_{{ admin.id }}" value="0" data-norm-applied-answers>
-                                <input type="hidden" name="applied_objective_{{ admin.id }}" value="0" data-norm-applied-objective>
-                                <input type="hidden" name="applied_objective_date_{{ admin.id }}" value="" data-norm-applied-objective-date>
-                                <input type="hidden" name="inactive_info_{{ admin.id }}" value="" data-norm-inactive-info>
-                                <input type="hidden" name="status_{{ admin.id }}" value="no_norm" data-norm-status>
+                                <input type="hidden" name="objective_{{ admin.id }}" value="{{ 1 if row.objective else 0 }}" data-norm-objective>
+                                <input type="hidden" name="applied_answers_{{ admin.id }}" value="{{ row.applied_answers }}" data-norm-applied-answers>
+                                <input type="hidden" name="applied_objective_{{ admin.id }}" value="{{ 1 if row.applied_objective else 0 }}" data-norm-applied-objective>
+                                <input type="hidden" name="applied_objective_date_{{ admin.id }}" value="{{ row.applied_objective_date }}" data-norm-applied-objective-date>
+                                <input type="hidden" name="inactive_info_{{ admin.id }}" value="{{ row.inactive_info }}" data-norm-inactive-info>
+                                <input type="hidden" name="status_{{ admin.id }}" value="{{ row.status }}" data-norm-status>
                                 <div class="norm-check-person">
                                     <strong>{{ admin.nickname }}</strong>
                                     <span class="{{ role_tone_class(admin.role) }}">{{ admin.role }}</span>
@@ -64,7 +73,7 @@
                                 </div>
                                 <label>
                                     <span>Ответы</span>
-                                    <input type="number" name="answers_{{ admin.id }}" min="0" value="0" inputmode="numeric" data-norm-answers>
+                                    <input type="number" name="answers_{{ admin.id }}" min="0" value="{{ row.answers }}" inputmode="numeric" data-norm-answers>
                                     <small class="norm-sync-status" data-norm-sync-status aria-live="polite"></small>
                                 </label>
                                 <button type="button" class="button button-secondary norm-plus-button" data-norm-plus aria-pressed="false">+1</button>
@@ -133,7 +142,7 @@
                         <th>Выполнили</th>
                         <th>Неактивов</th>
                         <th>Нет нормы</th>
-                        <th>Смотреть</th>
+                        <th>Действия</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -145,9 +154,10 @@
                             <td data-label="Выполнили">{{ row.completed }}</td>
                             <td data-label="Неактивов">{{ row.inactive }}</td>
                             <td data-label="Нет нормы">{{ row.no_norm }}</td>
-                            <td data-label="Смотреть">
+                            <td data-label="Действия">
                                 <div class="norm-share-actions">
                                     <a href="{{ request.url_for('administration_norm_check_detail', check_id=row.id) }}" class="button button-secondary summary-button">Смотреть</a>
+                                    <a href="{{ request.url_for('administration_norm_check_edit_page', check_id=row.id) }}" class="button button-secondary summary-button">Изменить</a>
                                 </div>
                             </td>
                         </tr>

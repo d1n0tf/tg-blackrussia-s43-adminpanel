@@ -1123,14 +1123,105 @@ def norm_check_inactive_periods(user: Users) -> list[dict[str, str]]:
     return periods
 
 
-def norm_check_admin_rows() -> list[dict[str, Any]]:
-    return [
+def default_norm_check_form_row(admin: Users, preview_order: int = 0) -> dict[str, Any]:
+    return {
+        "user": admin,
+        "inactive_periods": json.dumps(norm_check_inactive_periods(admin), ensure_ascii=False),
+        "answers": 0,
+        "applied_answers": 0,
+        "objective": False,
+        "applied_objective": False,
+        "applied_objective_date": "",
+        "inactive_info": "",
+        "status": "no_norm",
+        "preview_order": preview_order,
+    }
+
+
+def norm_check_form_row_from_entry(entry: NormativeCheckEntries, check: NormativeChecks) -> dict[str, Any]:
+    status = entry.status if entry.status in NORM_CHECK_STATUSES else "completed"
+    answers = max(entry.answers or 0, 0)
+    counts_for_objective = bool(entry.counts_for_objective)
+    row = default_norm_check_form_row(entry.user, (entry.order_index or 0) + 1)
+    row.update(
         {
-            "user": admin,
-            "inactive_periods": json.dumps(norm_check_inactive_periods(admin), ensure_ascii=False),
+            "answers": answers if status == "completed" else 0,
+            "applied_answers": answers if status == "completed" else 0,
+            "objective": counts_for_objective and status == "completed",
+            "applied_objective": counts_for_objective,
+            "applied_objective_date": check.norm_date if counts_for_objective else "",
+            "inactive_info": entry.inactive_info or "",
+            "status": status,
         }
-        for admin in admin_norm_check_users()
-    ]
+    )
+    return row
+
+
+def norm_check_admin_rows(check: NormativeChecks | None = None) -> list[dict[str, Any]]:
+    current_admins = admin_norm_check_users()
+    if check is None:
+        return [default_norm_check_form_row(admin) for admin in current_admins]
+
+    rows: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    entries = (
+        NormativeCheckEntries.select()
+        .where(NormativeCheckEntries.check == check)
+        .order_by(NormativeCheckEntries.order_index, NormativeCheckEntries.id)
+    )
+    for entry in entries:
+        rows.append(norm_check_form_row_from_entry(entry, check))
+        seen_ids.add(entry.user.id)
+    for admin in current_admins:
+        if admin.id not in seen_ids:
+            rows.append(default_norm_check_form_row(admin, len(rows) + 1))
+    return rows
+
+
+def parse_norm_check_entries(
+    form: Any,
+    norm_date: str,
+    check: NormativeChecks | None = None,
+) -> list[dict[str, Any]]:
+    posted_ids = {parse_form_int(value) for value in form.getlist("user_id")}
+    entries: list[dict[str, Any]] = []
+    for order_index, row in enumerate(norm_check_admin_rows(check)):
+        admin = row["user"]
+        if admin.id not in posted_ids:
+            continue
+        answers = max(parse_form_int(form.get(f"answers_{admin.id}")), 0)
+        applied_answers = max(parse_form_int(form.get(f"applied_answers_{admin.id}")), 0)
+        objective = str(form.get(f"objective_{admin.id}") or "0") == "1"
+        applied_objective = str(form.get(f"applied_objective_{admin.id}") or "0") == "1"
+        applied_objective_date = str(form.get(f"applied_objective_date_{admin.id}") or "").strip()
+        status = str(form.get(f"status_{admin.id}") or "").strip()
+        if status not in NORM_CHECK_STATUSES:
+            status = "completed" if answers > 0 or objective else "no_norm"
+        inactive_info = str(form.get(f"inactive_info_{admin.id}") or "").strip()
+        if status == "inactive":
+            inactive_info = inactive_info or inactive_info_label(inactive_record_on_date(admin, norm_date))
+            answers = 0
+            objective = False
+        elif status == "no_norm":
+            answers = 0
+            objective = False
+        elif status == "completed":
+            status = "completed"
+        entries.append(
+            {
+                "user": admin,
+                "answers": answers,
+                "answers_to_apply": applied_answers if status == "no_norm" else answers,
+                "applied_answers": applied_answers,
+                "objective": objective,
+                "applied_objective": applied_objective,
+                "applied_objective_date": applied_objective_date,
+                "status": status,
+                "inactive_info": inactive_info or None,
+                "order_index": order_index,
+            }
+        )
+    return entries
 
 
 def parse_form_int(value: Any, default: int = 0) -> int:
@@ -3613,44 +3704,7 @@ async def administration_create_norm_check(request: Request):
         set_flash(request, "Проверка норматива за эту дату уже есть. Откройте её через «Смотреть».", "error")
         return redirect(f"{redirect_url}/{existing.id}")
 
-    posted_ids = {parse_form_int(value) for value in form.getlist("user_id")}
-    entries: list[dict[str, Any]] = []
-    for order_index, admin in enumerate(admin_norm_check_users()):
-        if admin.id not in posted_ids:
-            continue
-        answers = max(parse_form_int(form.get(f"answers_{admin.id}")), 0)
-        applied_answers = max(parse_form_int(form.get(f"applied_answers_{admin.id}")), 0)
-        objective = str(form.get(f"objective_{admin.id}") or "0") == "1"
-        applied_objective = str(form.get(f"applied_objective_{admin.id}") or "0") == "1"
-        applied_objective_date = str(form.get(f"applied_objective_date_{admin.id}") or "").strip()
-        status = str(form.get(f"status_{admin.id}") or "").strip()
-        if status not in NORM_CHECK_STATUSES:
-            status = "completed" if answers > 0 or objective else "no_norm"
-        inactive_info = str(form.get(f"inactive_info_{admin.id}") or "").strip()
-        if status == "inactive":
-            inactive_info = inactive_info or inactive_info_label(inactive_record_on_date(admin, norm_date))
-            answers = 0
-            objective = False
-        elif status == "no_norm":
-            answers = 0
-            objective = False
-        elif status == "completed":
-            status = "completed"
-        entries.append(
-            {
-                "user": admin,
-                "answers": answers,
-                "answers_to_apply": applied_answers if status == "no_norm" else answers,
-                "applied_answers": applied_answers,
-                "objective": objective,
-                "applied_objective": applied_objective,
-                "applied_objective_date": applied_objective_date,
-                "status": status,
-                "inactive_info": inactive_info or None,
-                "order_index": order_index,
-            }
-        )
-
+    entries = parse_norm_check_entries(form, norm_date)
     if not entries:
         set_flash(request, "Не найден список администрации для проверки.", "error")
         return redirect(redirect_url)
@@ -3685,6 +3739,96 @@ async def administration_create_norm_check(request: Request):
             )
     sync_sheets(composition=True)
     set_flash(request, "Проверка норматива сохранена. Ответы и дни нормы применяются сразу при вводе.", "success")
+    return redirect(f"{redirect_url}/{check.id}")
+
+
+@app.get(
+    "/administration/norm-checks/{check_id}/edit",
+    response_class=HTMLResponse,
+    name="administration_norm_check_edit_page",
+)
+async def administration_norm_check_edit_page(request: Request, check_id: int, page: int = 1):
+    user = require_auth(request)
+    if user is None:
+        return redirect("/login")
+    if not can_access_admin_reviews(user):
+        set_flash(request, "У вас нет доступа к этому разделу.", "error")
+        return redirect("/dashboard")
+    check = NormativeChecks.get_or_none(NormativeChecks.id == check_id)
+    if check is None:
+        set_flash(request, "Проверка норматива не найдена.", "error")
+        return redirect(admin_redirect_path("norm-checks"))
+    page = normalize_page(page)
+    rows, has_next, selected_norm_date = admin_norm_check_page_rows(page, check.norm_date)
+    return render(
+        request,
+        "administration_norm_checks.html",
+        "Администрация • Изменение нормы",
+        "administration_norm_checks",
+        rows=rows,
+        page=page,
+        has_next=has_next,
+        selected_norm_date=selected_norm_date,
+        today=today_str(),
+        norm_admin_rows=norm_check_admin_rows(check),
+        norm_status_labels=NORM_CHECK_STATUS_LABELS,
+        norm_check_edit=build_norm_check_summary_row(check),
+    )
+
+
+@app.post("/administration/norm-checks/{check_id}/edit", name="administration_update_norm_check")
+async def administration_update_norm_check(request: Request, check_id: int):
+    actor = require_auth(request)
+    if actor is None:
+        return redirect("/login")
+    if not can_access_admin_reviews(actor):
+        return redirect("/dashboard")
+    check = NormativeChecks.get_or_none(NormativeChecks.id == check_id)
+    if check is None:
+        set_flash(request, "Проверка норматива не найдена.", "error")
+        return redirect(admin_redirect_path("norm-checks"))
+    form = await request.form()
+    csrf_token = str(form.get("csrf_token") or "")
+    redirect_url = admin_redirect_path("norm-checks")
+    if not validate_csrf(request, csrf_token):
+        set_flash(request, "Сессия формы устарела.", "error")
+        return redirect(f"{redirect_url}/{check.id}/edit")
+
+    norm_date = check.norm_date
+    entries = parse_norm_check_entries(form, norm_date, check)
+    if not entries:
+        set_flash(request, "Не найден список администрации для проверки.", "error")
+        return redirect(f"{redirect_url}/{check.id}/edit")
+
+    with dbhandle.atomic():
+        for entry in entries:
+            admin = entry["user"]
+            apply_norm_answers_delta(admin, entry["answers_to_apply"], entry["applied_answers"])
+            apply_norm_objective_delta(
+                admin,
+                entry["objective"],
+                entry["applied_objective"],
+                norm_date,
+                entry["applied_objective_date"],
+            )
+        NormativeCheckEntries.delete().where(NormativeCheckEntries.check == check).execute()
+        for entry in entries:
+            admin = entry["user"]
+            NormativeCheckEntries.create(
+                check=check,
+                user=admin,
+                nickname=admin.nickname,
+                role=admin.role,
+                answers=entry["answers"],
+                counts_for_objective=1 if entry["objective"] else 0,
+                status=entry["status"],
+                inactive_info=entry["inactive_info"],
+                order_index=entry["order_index"],
+            )
+        check.updated_at = now_ts()
+        check.save()
+    sync_sheets(composition=True)
+    set_flash(request, "Проверка норматива обновлена.", "success")
     return redirect(f"{redirect_url}/{check.id}")
 
 

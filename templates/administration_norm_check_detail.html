@@ -15,6 +15,7 @@
                 data-share-url="{{ request.url_for('administration_share_norm_check', check_id=detail.summary.id) }}"
                 data-csrf-token="{{ csrf_token }}"
             >Поделиться</button>
+            <a href="{{ request.url_for('administration_norm_check_edit_page', check_id=detail.summary.id) }}" class="button button-secondary">Изменить</a>
             <a href="{{ request.url_for('administration_norm_checks_page') }}" class="button button-secondary">К списку</a>
         </div>
     </div>
