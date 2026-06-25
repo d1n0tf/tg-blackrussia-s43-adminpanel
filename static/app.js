@@ -740,10 +740,13 @@
             return;
         }
 
+        const appliedAmount = normRowAppliedAnswers(row);
         const status = normRowControl(row, "[data-norm-status]")?.value || "completed";
         const rawAmount = typeof options.forceAmount === "number" ? options.forceAmount : normRowAnswers(row);
         let amount = status === "completed" ? Math.max(Math.trunc(rawAmount), 0) : 0;
-        const appliedAmount = normRowAppliedAnswers(row);
+        if (status === "no_norm" && typeof options.forceAmount !== "number") {
+            amount = appliedAmount;
+        }
         if (amount === appliedAmount && !options.force) {
             return;
         }
@@ -931,7 +934,9 @@
 
         const hadSelectedObjective = normRowObjective(row);
         clearNormObjectiveSelection(row);
-        applyNormAnswers(row, { forceAmount: 0 });
+        if (status === "inactive") {
+            applyNormAnswers(row, { forceAmount: 0 });
+        }
         if (hadSelectedObjective || normRowAppliedObjective(row)) {
             applyNormObjective(row, { forceEnabled: false });
         }

@@ -112,19 +112,9 @@ GENERAL_SEARCH_ROLES = TOP_MANAGER_ROLES + (
     "Заместитель КА",
     "Заместитель куратора администрации",
 )
-ADMIN_NORM_CHECK_EXCLUDED_ROLES = {
-    "Куратор агентов поддержки",
-    "Куратор организации",
-    "Заместитель КАП",
-    "Заместитель КО",
-}
 ADMIN_NORM_CHECK_ROLES = tuple(
     dict.fromkeys(
-        [
-            role
-            for role in ROLES[ROLES.index("Куратор администрации") :]
-            if role not in ADMIN_NORM_CHECK_EXCLUDED_ROLES
-        ]
+        list(ROLES[ROLES.index("Куратор администрации") :])
         + ["Заместитель куратора администрации"]
     )
 )
@@ -1100,10 +1090,13 @@ def inactive_record_on_date(user: Users, norm_date: str) -> Inactives | None:
 def inactive_info_label(record: Inactives | None) -> str:
     if record is None:
         return ""
-    label = f"{record.start} - {record.end}"
-    if record.reason:
-        label = f"{label}: {record.reason}"
-    return label
+    return f"{record.start} - {record.end}"
+
+
+def inactive_period_label(value: str | None) -> str:
+    if not value:
+        return ""
+    return str(value).split(":", 1)[0].strip()
 
 
 def norm_check_inactive_periods(user: Users) -> list[dict[str, str]]:
@@ -1255,6 +1248,7 @@ def build_norm_check_summary_row(check: NormativeChecks) -> dict[str, Any]:
 
 
 def norm_check_entry_row(entry: NormativeCheckEntries) -> dict[str, Any]:
+    inactive_info = entry.inactive_info or ""
     return {
         "id": entry.id,
         "nickname": entry.nickname,
@@ -1262,7 +1256,8 @@ def norm_check_entry_row(entry: NormativeCheckEntries) -> dict[str, Any]:
         "answers": entry.answers or 0,
         "counts_for_objective": bool(entry.counts_for_objective),
         "status": entry.status if entry.status in NORM_CHECK_STATUSES else "completed",
-        "inactive_info": entry.inactive_info or "",
+        "inactive_info": inactive_info,
+        "inactive_period": inactive_period_label(inactive_info),
     }
 
 
@@ -3645,6 +3640,7 @@ async def administration_create_norm_check(request: Request):
             {
                 "user": admin,
                 "answers": answers,
+                "answers_to_apply": applied_answers if status == "no_norm" else answers,
                 "applied_answers": applied_answers,
                 "objective": objective,
                 "applied_objective": applied_objective,
@@ -3668,7 +3664,7 @@ async def administration_create_norm_check(request: Request):
         )
         for entry in entries:
             admin = entry["user"]
-            apply_norm_answers_delta(admin, entry["answers"], entry["applied_answers"])
+            apply_norm_answers_delta(admin, entry["answers_to_apply"], entry["applied_answers"])
             apply_norm_objective_delta(
                 admin,
                 entry["objective"],

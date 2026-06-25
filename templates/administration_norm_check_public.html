@@ -91,7 +91,7 @@
                         {% for row in detail.blocks.inactive %}
                             <div class="stack-item">
                                 <strong>{{ row.nickname }}</strong>
-                                <span>{{ row.inactive_info or row.role }}</span>
+                                <span>{{ row.inactive_period or row.role }}</span>
                             </div>
                         {% endfor %}
                     </div>
