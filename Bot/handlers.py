@@ -60,7 +60,7 @@ router: Router = Router()
 
 async def answer_callback(event: CallbackQuery | Message) -> None:
     if getattr(event, "data", None) is not None:
-        await event.answer()
+        await event.answer()  # type: ignore
 
 
 @router.message(Command("id"), F.chat.type == "private")

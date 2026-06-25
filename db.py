@@ -284,6 +284,36 @@ class PunishmentEntries(Model):
         table_name = "punishmententries"
 
 
+class NormativeChecks(Model):
+    id = AutoField()
+    norm_date = TextField(unique=True)
+    created_by = BigIntegerField()
+    created_at = BigIntegerField(default=current_timestamp)
+    updated_at = BigIntegerField(default=current_timestamp)
+    is_public = IntegerField(default=0)
+
+    class Meta:
+        database = dbhandle
+        table_name = "normativechecks"
+
+
+class NormativeCheckEntries(Model):
+    id = AutoField()
+    check = ForeignKeyField(NormativeChecks, backref="entries")
+    user = ForeignKeyField(Users, backref="normative_check_entries")
+    nickname = TextField()
+    role = TextField(null=True)
+    answers = IntegerField(default=0)
+    counts_for_objective = IntegerField(default=0)
+    status = TextField(default="completed")
+    inactive_info = TextField(null=True)
+    order_index = IntegerField(default=0)
+
+    class Meta:
+        database = dbhandle
+        table_name = "normativecheckentries"
+
+
 ALL_MODELS = (
     Users,
     Fractions,
@@ -304,6 +334,8 @@ ALL_MODELS = (
     WebCredentials,
     Reports,
     PunishmentEntries,
+    NormativeChecks,
+    NormativeCheckEntries,
 )
 
 
@@ -370,6 +402,12 @@ def init_db() -> None:
             "created_at": "INTEGER",
         },
     )
+    ensure_columns(
+        "normativechecks",
+        {
+            "is_public": "INTEGER DEFAULT 0",
+        },
+    )
     dbhandle.execute_sql("UPDATE forms SET status = 'legacy' WHERE status IS NULL")
     dbhandle.execute_sql(
         "UPDATE inactiverequests SET status = 'pending' WHERE status IS NULL"
@@ -387,6 +425,9 @@ def init_db() -> None:
     ensure_index("idx_forms_fromtgid_status", "forms", '"fromtgid", "status"')
     ensure_index("idx_punishmentsrequests_tg_status", "punishmentsrequests", '"telegram_id", "status"')
     ensure_index("idx_reports_user_status_type", "reports", '"user_id", "status", "report_type"')
+    ensure_index("idx_normativechecks_date", "normativechecks", '"norm_date"')
+    ensure_index("idx_normativecheckentries_check_status", "normativecheckentries", '"check_id", "status"')
+    ensure_index("idx_normativecheckentries_user", "normativecheckentries", '"user_id"')
     ensure_index(
         "idx_punishmententries_lookup",
         "punishmententries",

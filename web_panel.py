@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 import validators
 from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.exception_handlers import http_exception_handler as fastapi_http_exception_handler
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from loguru import logger
@@ -35,6 +35,8 @@ from db import (
     Forms,
     InactiveRequests,
     Inactives,
+    NormativeCheckEntries,
+    NormativeChecks,
     Objectives,
     PunishmentEntries,
     PunishmentsRequests,
@@ -110,6 +112,29 @@ GENERAL_SEARCH_ROLES = TOP_MANAGER_ROLES + (
     "Заместитель КА",
     "Заместитель куратора администрации",
 )
+ADMIN_NORM_CHECK_EXCLUDED_ROLES = {
+    "Куратор агентов поддержки",
+    "Куратор организации",
+    "Заместитель КАП",
+    "Заместитель КО",
+}
+ADMIN_NORM_CHECK_ROLES = tuple(
+    dict.fromkeys(
+        [
+            role
+            for role in ROLES[ROLES.index("Куратор администрации") :]
+            if role not in ADMIN_NORM_CHECK_EXCLUDED_ROLES
+        ]
+        + ["Заместитель куратора администрации"]
+    )
+)
+ADMIN_NORM_CHECK_PAGE_SIZE = 30
+NORM_CHECK_STATUSES = ("completed", "no_norm", "inactive")
+NORM_CHECK_STATUS_LABELS = {
+    "completed": "Выполнен норматив",
+    "no_norm": "Нет норматива",
+    "inactive": "Неактивы",
+}
 SCOPE_TITLES = {
     "leaders": "Лидеры",
     "support": "Агенты поддержки",
@@ -390,7 +415,7 @@ def user_scope(user: Users) -> str:
 
 
 def user_display_role(user: Users) -> str:
-    return "Лидер" if user.fraction else (user.role or "Пользователь")
+    return "Лидер" if user.fraction else (user.role or "Пользователь")  # type: ignore
 
 
 def user_by_telegram_value(value: Any) -> Users | None:
@@ -607,6 +632,7 @@ def pending_menu_badges(user: Users) -> dict[str, int]:
             .where(
                 Reports.user_id << admin_ids,
                 Reports.status == "pending",
+                Reports.report_type == "additional",
             )
             .count()
         )
@@ -627,7 +653,7 @@ def menu_for_user(user: Users, active_page: str) -> list[dict[str, Any]]:
     if user.role in ROLES:
         items.extend(
             [
-                {"title": "Отчёты", "href": "/reports", "key": "reports", "section": "main"},
+                {"title": "Доп. Ответы", "href": "/reports", "key": "reports", "section": "main"},
                 {"title": "Формы", "href": "/forms", "key": "forms", "section": "main"},
                 {"title": "Наказания", "href": "/punishments", "key": "punishments", "section": "main"},
             ]
@@ -654,7 +680,7 @@ def menu_for_user(user: Users, active_page: str) -> list[dict[str, Any]]:
                     "section": "administration",
                 },
                 {
-                    "title": "Отчёты",
+                    "title": "Доп. Ответы",
                     "href": "/administration/reports",
                     "key": "administration_reports",
                     "section": "administration",
@@ -663,6 +689,12 @@ def menu_for_user(user: Users, active_page: str) -> list[dict[str, Any]]:
                     "title": "Наказания",
                     "href": "/administration/punishments",
                     "key": "administration_punishments",
+                    "section": "administration",
+                },
+                {
+                    "title": "Проверка нормы",
+                    "href": "/administration/norm-checks",
+                    "key": "administration_norm_checks",
                     "section": "administration",
                 },
             ]
@@ -1008,6 +1040,252 @@ def inactive_request_block_reason(
     return None
 
 
+def admin_norm_check_users() -> list[Users]:
+    users = list(
+        Users.select().where(
+            Users.role << ADMIN_NORM_CHECK_ROLES,
+            Users.fraction.is_null(True),
+        )
+    )
+    return sorted(
+        users,
+        key=lambda user: (
+            ROLES.index(user.role) if user.role in ROLES else len(ROLES),
+            user.nickname.lower(),
+        ),
+    )
+
+
+def iso_date_label(value: str) -> str:
+    try:
+        return parse_iso_date(value).strftime("%d.%m.%Y")
+    except ValueError:
+        return value
+
+
+def ru_date_to_iso(value: str) -> str | None:
+    try:
+        return parse_ru_date(value).strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def objective_timestamp_for_date(value: str) -> int:
+    return int((parse_iso_date(value) + timedelta(hours=12)).timestamp())
+
+
+def inactive_record_on_date(user: Users, norm_date: str) -> Inactives | None:
+    try:
+        target_date = parse_iso_date(norm_date).date()
+    except ValueError:
+        return None
+    for record in (
+        Inactives.select()
+        .where(
+            Inactives.nickname == user.nickname,
+            Inactives.status == "Одобрен",
+        )
+        .order_by(Inactives.id.desc())
+    ):
+        try:
+            start_date = parse_ru_date(record.start).date()
+            end_date = parse_ru_date(record.end).date()
+        except ValueError:
+            continue
+        if start_date <= target_date <= end_date:
+            return record
+    return None
+
+
+def inactive_info_label(record: Inactives | None) -> str:
+    if record is None:
+        return ""
+    label = f"{record.start} - {record.end}"
+    if record.reason:
+        label = f"{label}: {record.reason}"
+    return label
+
+
+def norm_check_inactive_periods(user: Users) -> list[dict[str, str]]:
+    periods: list[dict[str, str]] = []
+    for record in (
+        Inactives.select()
+        .where(
+            Inactives.nickname == user.nickname,
+            Inactives.status == "Одобрен",
+        )
+        .order_by(Inactives.id.desc())
+    ):
+        start_iso = ru_date_to_iso(record.start)
+        end_iso = ru_date_to_iso(record.end)
+        if start_iso is None or end_iso is None:
+            continue
+        periods.append(
+            {
+                "start": start_iso,
+                "end": end_iso,
+                "label": inactive_info_label(record),
+            }
+        )
+    return periods
+
+
+def norm_check_admin_rows() -> list[dict[str, Any]]:
+    return [
+        {
+            "user": admin,
+            "inactive_periods": json.dumps(norm_check_inactive_periods(admin), ensure_ascii=False),
+        }
+        for admin in admin_norm_check_users()
+    ]
+
+
+def parse_form_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def norm_check_json_error(message: str, status_code: int = 400) -> JSONResponse:
+    return JSONResponse({"ok": False, "error": message}, status_code=status_code)
+
+
+def norm_check_target_admin(user_id: int) -> Users | None:
+    target = Users.get_or_none(Users.id == user_id)
+    if target is None or target.role not in ADMIN_NORM_CHECK_ROLES or target.fraction is not None:
+        return None
+    return target
+
+
+def apply_norm_answers_delta(user: Users, desired_amount: int, applied_amount: int) -> int:
+    next_amount = max(desired_amount, 0)
+    previous_amount = max(applied_amount, 0)
+    delta = next_amount - previous_amount
+    if delta:
+        user.apa = max((user.apa or 0) + delta, 0)
+        user.save()
+    return delta
+
+
+def delete_one_objective_record(user: Users, objective_time: int) -> bool:
+    record = (
+        Objectives.select()
+        .where(
+            Objectives.telegram_id == str(user.telegram_id),
+            Objectives.time == objective_time,
+        )
+        .first()
+    )
+    if record is not None:
+        record.delete_instance()
+        return True
+    return False
+
+
+def ensure_objective_record(user: Users, objective_time: int) -> bool:
+    existing = (
+        Objectives.select()
+        .where(
+            Objectives.telegram_id == str(user.telegram_id),
+            Objectives.time == objective_time,
+        )
+        .first()
+    )
+    if existing is not None:
+        return False
+    Objectives.create(telegram_id=str(user.telegram_id), time=objective_time)
+    return True
+
+
+def apply_norm_objective_delta(
+    user: Users,
+    enabled: bool,
+    applied: bool,
+    norm_date: str,
+    applied_norm_date: str,
+) -> int:
+    next_objective_time = objective_timestamp_for_date(norm_date)
+    previous_date = applied_norm_date.strip() or norm_date
+    try:
+        previous_objective_time = objective_timestamp_for_date(previous_date)
+    except ValueError:
+        previous_objective_time = next_objective_time
+
+    should_move_date = enabled and applied and previous_objective_time != next_objective_time
+    completed_delta = 0
+    if applied and (not enabled or should_move_date):
+        if delete_one_objective_record(user, previous_objective_time) and not enabled:
+            completed_delta -= 1
+    if enabled and (not applied or should_move_date):
+        if ensure_objective_record(user, next_objective_time) and not applied:
+            completed_delta += 1
+    if completed_delta:
+        user.objective_completed = max((user.objective_completed or 0) + completed_delta, 0)
+        user.save()
+    return completed_delta
+
+
+def norm_check_summary_counts(check: NormativeChecks) -> dict[str, int]:
+    counts = {status: 0 for status in NORM_CHECK_STATUSES}
+    total = 0
+    for entry in NormativeCheckEntries.select().where(NormativeCheckEntries.check == check):
+        total += 1
+        status = entry.status if entry.status in counts else "completed"
+        counts[status] += 1
+    return {
+        "total": total,
+        "completed": counts["completed"],
+        "inactive": counts["inactive"],
+        "no_norm": counts["no_norm"],
+    }
+
+
+def build_norm_check_summary_row(check: NormativeChecks) -> dict[str, Any]:
+    creator = Users.get_or_none(Users.telegram_id == check.created_by)
+    counts = norm_check_summary_counts(check)
+    return {
+        "id": check.id,
+        "norm_date": check.norm_date,
+        "norm_date_label": iso_date_label(check.norm_date),
+        "created_by": creator.nickname if creator else str(check.created_by),
+        "created_at": format_datetime(check.created_at),
+        **counts,
+    }
+
+
+def norm_check_entry_row(entry: NormativeCheckEntries) -> dict[str, Any]:
+    return {
+        "id": entry.id,
+        "nickname": entry.nickname,
+        "role": entry.role or "-",
+        "answers": entry.answers or 0,
+        "counts_for_objective": bool(entry.counts_for_objective),
+        "status": entry.status if entry.status in NORM_CHECK_STATUSES else "completed",
+        "inactive_info": entry.inactive_info or "",
+    }
+
+
+def build_norm_check_detail(check: NormativeChecks) -> dict[str, Any]:
+    rows = [
+        norm_check_entry_row(entry)
+        for entry in (
+            NormativeCheckEntries.select()
+            .where(NormativeCheckEntries.check == check)
+            .order_by(NormativeCheckEntries.order_index, NormativeCheckEntries.id)
+        )
+    ]
+    blocks = {
+        "completed": [row for row in rows if row["status"] == "completed"],
+        "no_norm": [row for row in rows if row["status"] == "no_norm"],
+        "inactive": [row for row in rows if row["status"] == "inactive"],
+    }
+    return {
+        "summary": build_norm_check_summary_row(check),
+        "blocks": blocks,
+    }
+
+
 def punishment_entries(user: Users) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     real_entries = list(
         PunishmentEntries.select()
@@ -1297,6 +1575,7 @@ def render(
                 "legacy": "Legacy",
                 "Одобрен": "Одобрен",
                 "Отказан": "Отказан",
+                **NORM_CHECK_STATUS_LABELS,
             },
             "scope_titles": SCOPE_TITLES,
             "scope_metric_labels": SCOPE_METRIC_LABELS,
@@ -1932,22 +2211,23 @@ def admin_forms_page_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]],
     return pending_rows, history_rows, approved_total
 
 
-def admin_reports_page_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+def admin_reports_page_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     _, telegram_lookup = build_user_lookups()
-    pending_objective_rows: list[dict[str, Any]] = []
     pending_additional_rows: list[dict[str, Any]] = []
     history_rows: list[dict[str, Any]] = []
-    for record in Reports.select().order_by(Reports.id.desc()):
+    query = (
+        Reports.select()
+        .where(Reports.report_type == "additional")
+        .order_by(Reports.id.desc())
+    )
+    for record in query:
         owner = Users.get_or_none(Users.id == record.user_id)
         row = build_report_row(record, user_lookup=telegram_lookup, owner=owner)
         if row["status"] == "pending":
-            if record.report_type == "objective":
-                pending_objective_rows.append(row)
-            else:
-                pending_additional_rows.append(row)
+            pending_additional_rows.append(row)
         else:
             history_rows.append(row)
-    return pending_objective_rows, pending_additional_rows, history_rows
+    return pending_additional_rows, history_rows
 
 
 def admin_punishment_page_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -1988,6 +2268,23 @@ def admin_punishment_page_rows() -> tuple[list[dict[str, Any]], list[dict[str, A
         else:
             history_rows.append(row)
     return pending_rows, history_rows
+
+
+def admin_norm_check_page_rows(
+    page: int,
+    norm_date: str | None = None,
+) -> tuple[list[dict[str, Any]], bool, str]:
+    page = normalize_page(page)
+    date_filter = (norm_date or "").strip()
+    query = NormativeChecks.select().order_by(NormativeChecks.norm_date.desc(), NormativeChecks.id.desc())
+    if date_filter:
+        try:
+            parse_iso_date(date_filter)
+        except ValueError:
+            return [], False, ""
+        query = query.where(NormativeChecks.norm_date == date_filter)
+    records, has_next = paginate_query(query, page, ADMIN_NORM_CHECK_PAGE_SIZE)
+    return [build_norm_check_summary_row(record) for record in records], has_next, date_filter
 
 
 @asynccontextmanager
@@ -2564,7 +2861,7 @@ async def reports_page(request: Request, history_page: int = 1):
     page = normalize_page(history_page)
     records, history_has_next = paginate_query(
         Reports.select()
-        .where(Reports.user == user)
+        .where((Reports.user == user) & (Reports.report_type == "additional"))
         .order_by(Reports.id.desc()),
         page,
         USER_LIST_PAGE_SIZE,
@@ -2573,7 +2870,7 @@ async def reports_page(request: Request, history_page: int = 1):
     return render(
         request,
         "reports.html",
-        "Отчёты",
+        "Доп. Ответы",
         "reports",
         rows=rows,
         history_page=page,
@@ -2594,14 +2891,11 @@ async def create_report(request: Request):
     if form is None:
         return redirect("/reports")
     try:
-        report_type = form_text_value(form, "report_type")
+        report_type = "additional"
         report_date = form_text_value(form, "report_date")
         csrf_token = form_text_value(form, "csrf_token")
         if not validate_csrf(request, csrf_token):
             set_flash(request, "Сессия формы устарела.", "error")
-            return redirect("/reports")
-        if report_type not in {"objective", "additional"}:
-            set_flash(request, "Выберите корректный тип отчёта.", "error")
             return redirect("/reports")
         try:
             parse_iso_date(report_date)
@@ -3172,7 +3466,6 @@ async def administration_forms_page(request: Request, pending_page: int = 1, his
 @app.get("/administration/reports", response_class=HTMLResponse, name="administration_reports_page")
 async def administration_reports_page(
     request: Request,
-    objective_page: int = 1,
     additional_page: int = 1,
     history_page: int = 1,
 ):
@@ -3182,27 +3475,289 @@ async def administration_reports_page(
     if not can_access_admin_reviews(user):
         set_flash(request, "У вас нет доступа к этому разделу.", "error")
         return redirect("/dashboard")
-    objective_rows_all, additional_rows_all, history_rows_all = admin_reports_page_rows()
-    objective_page = normalize_page(objective_page)
+    additional_rows_all, history_rows_all = admin_reports_page_rows()
     additional_page = normalize_page(additional_page)
     history_page = normalize_page(history_page)
-    pending_objective_rows, objective_has_next = paginate_list(objective_rows_all, objective_page, ADMIN_LIST_PAGE_SIZE)
     pending_additional_rows, additional_has_next = paginate_list(additional_rows_all, additional_page, ADMIN_LIST_PAGE_SIZE)
     history_rows, history_has_next = paginate_list(history_rows_all, history_page, ADMIN_LIST_PAGE_SIZE)
     return render(
         request,
         "administration_reports.html",
-        "Администрация • Отчёты",
+        "Администрация • Доп. Ответы",
         "administration_reports",
-        pending_objective_rows=pending_objective_rows,
-        objective_page=objective_page,
-        objective_has_next=objective_has_next,
         pending_additional_rows=pending_additional_rows,
         additional_page=additional_page,
         additional_has_next=additional_has_next,
         history_rows=history_rows,
         history_page=history_page,
         history_has_next=history_has_next,
+    )
+
+
+@app.get("/administration/norm-checks", response_class=HTMLResponse, name="administration_norm_checks_page")
+async def administration_norm_checks_page(request: Request, page: int = 1, norm_date: str = ""):
+    user = require_auth(request)
+    if user is None:
+        return redirect("/login")
+    if not can_access_admin_reviews(user):
+        set_flash(request, "У вас нет доступа к этому разделу.", "error")
+        return redirect("/dashboard")
+    page = normalize_page(page)
+    rows, has_next, selected_norm_date = admin_norm_check_page_rows(page, norm_date)
+    return render(
+        request,
+        "administration_norm_checks.html",
+        "Администрация • Проверка нормы",
+        "administration_norm_checks",
+        rows=rows,
+        page=page,
+        has_next=has_next,
+        selected_norm_date=selected_norm_date,
+        today=today_str(),
+        norm_admin_rows=norm_check_admin_rows(),
+        norm_status_labels=NORM_CHECK_STATUS_LABELS,
+    )
+
+
+@app.post("/administration/norm-checks/answers", name="administration_apply_norm_answers")
+async def administration_apply_norm_answers(
+    request: Request,
+    user_id: int = Form(...),
+    amount: int = Form(0),
+    applied_amount: int = Form(0),
+    csrf_token: str = Form(...),
+):
+    actor = require_auth(request)
+    if actor is None:
+        return norm_check_json_error("Требуется авторизация.", 401)
+    if not can_access_admin_reviews(actor):
+        return norm_check_json_error("Недостаточно прав.", 403)
+    if not validate_csrf(request, csrf_token):
+        return norm_check_json_error("Сессия формы устарела.", 400)
+    target = norm_check_target_admin(user_id)
+    if target is None:
+        return norm_check_json_error("Администратор не найден.", 404)
+
+    next_amount = max(amount, 0)
+    delta = apply_norm_answers_delta(target, next_amount, applied_amount)
+    return {
+        "ok": True,
+        "applied_amount": next_amount,
+        "delta": delta,
+        "total_answers": target.apa or 0,
+    }
+
+
+@app.post("/administration/norm-checks/objective", name="administration_apply_norm_objective")
+async def administration_apply_norm_objective(
+    request: Request,
+    user_id: int = Form(...),
+    enabled: int = Form(0),
+    applied: int = Form(0),
+    norm_date: str = Form(""),
+    applied_norm_date: str = Form(""),
+    csrf_token: str = Form(...),
+):
+    actor = require_auth(request)
+    if actor is None:
+        return norm_check_json_error("Требуется авторизация.", 401)
+    if not can_access_admin_reviews(actor):
+        return norm_check_json_error("Недостаточно прав.", 403)
+    if not validate_csrf(request, csrf_token):
+        return norm_check_json_error("Сессия формы устарела.", 400)
+    target = norm_check_target_admin(user_id)
+    if target is None:
+        return norm_check_json_error("Администратор не найден.", 404)
+
+    norm_date = norm_date.strip()
+    try:
+        objective_timestamp_for_date(norm_date)
+    except ValueError:
+        return norm_check_json_error("Проверьте дату норматива.", 400)
+    next_enabled = enabled == 1
+    was_applied = applied == 1
+    with dbhandle.atomic():
+        completed_delta = apply_norm_objective_delta(
+            target,
+            next_enabled,
+            was_applied,
+            norm_date,
+            applied_norm_date,
+        )
+
+    return {
+        "ok": True,
+        "applied_objective": next_enabled,
+        "applied_norm_date": norm_date if next_enabled else "",
+        "delta": completed_delta,
+        "objective_completed": target.objective_completed or 0,
+    }
+
+
+@app.post("/administration/norm-checks", name="administration_create_norm_check")
+async def administration_create_norm_check(request: Request):
+    actor = require_auth(request)
+    if actor is None:
+        return redirect("/login")
+    if not can_access_admin_reviews(actor):
+        return redirect("/dashboard")
+    form = await request.form()
+    csrf_token = str(form.get("csrf_token") or "")
+    redirect_url = admin_redirect_path("norm-checks")
+    if not validate_csrf(request, csrf_token):
+        set_flash(request, "Сессия формы устарела.", "error")
+        return redirect(redirect_url)
+    norm_date = str(form.get("norm_date") or "").strip()
+    try:
+        parse_iso_date(norm_date)
+    except ValueError:
+        set_flash(request, "Проверьте дату норматива.", "error")
+        return redirect(redirect_url)
+    existing = NormativeChecks.get_or_none(NormativeChecks.norm_date == norm_date)
+    if existing is not None:
+        set_flash(request, "Проверка норматива за эту дату уже есть. Откройте её через «Смотреть».", "error")
+        return redirect(f"{redirect_url}/{existing.id}")
+
+    posted_ids = {parse_form_int(value) for value in form.getlist("user_id")}
+    entries: list[dict[str, Any]] = []
+    for order_index, admin in enumerate(admin_norm_check_users()):
+        if admin.id not in posted_ids:
+            continue
+        answers = max(parse_form_int(form.get(f"answers_{admin.id}")), 0)
+        applied_answers = max(parse_form_int(form.get(f"applied_answers_{admin.id}")), 0)
+        objective = str(form.get(f"objective_{admin.id}") or "0") == "1"
+        applied_objective = str(form.get(f"applied_objective_{admin.id}") or "0") == "1"
+        applied_objective_date = str(form.get(f"applied_objective_date_{admin.id}") or "").strip()
+        status = str(form.get(f"status_{admin.id}") or "").strip()
+        if status not in NORM_CHECK_STATUSES:
+            status = "completed" if answers > 0 or objective else "no_norm"
+        inactive_info = str(form.get(f"inactive_info_{admin.id}") or "").strip()
+        if status == "inactive":
+            inactive_info = inactive_info or inactive_info_label(inactive_record_on_date(admin, norm_date))
+            answers = 0
+            objective = False
+        elif status == "no_norm":
+            answers = 0
+            objective = False
+        elif status == "completed":
+            status = "completed"
+        entries.append(
+            {
+                "user": admin,
+                "answers": answers,
+                "applied_answers": applied_answers,
+                "objective": objective,
+                "applied_objective": applied_objective,
+                "applied_objective_date": applied_objective_date,
+                "status": status,
+                "inactive_info": inactive_info or None,
+                "order_index": order_index,
+            }
+        )
+
+    if not entries:
+        set_flash(request, "Не найден список администрации для проверки.", "error")
+        return redirect(redirect_url)
+
+    with dbhandle.atomic():
+        check = NormativeChecks.create(
+            norm_date=norm_date,
+            created_by=actor.telegram_id,
+            created_at=now_ts(),
+            updated_at=now_ts(),
+        )
+        for entry in entries:
+            admin = entry["user"]
+            apply_norm_answers_delta(admin, entry["answers"], entry["applied_answers"])
+            apply_norm_objective_delta(
+                admin,
+                entry["objective"],
+                entry["applied_objective"],
+                norm_date,
+                entry["applied_objective_date"],
+            )
+            NormativeCheckEntries.create(
+                check=check,
+                user=admin,
+                nickname=admin.nickname,
+                role=admin.role,
+                answers=entry["answers"],
+                counts_for_objective=1 if entry["objective"] else 0,
+                status=entry["status"],
+                inactive_info=entry["inactive_info"],
+                order_index=entry["order_index"],
+            )
+    sync_sheets(composition=True)
+    set_flash(request, "Проверка норматива сохранена. Ответы и дни нормы применяются сразу при вводе.", "success")
+    return redirect(f"{redirect_url}/{check.id}")
+
+
+@app.get(
+    "/administration/norm-checks/{check_id}",
+    response_class=HTMLResponse,
+    name="administration_norm_check_detail",
+)
+async def administration_norm_check_detail(request: Request, check_id: int):
+    user = require_auth(request)
+    if user is None:
+        return redirect("/login")
+    if not can_access_admin_reviews(user):
+        set_flash(request, "У вас нет доступа к этому разделу.", "error")
+        return redirect("/dashboard")
+    check = NormativeChecks.get_or_none(NormativeChecks.id == check_id)
+    if check is None:
+        set_flash(request, "Проверка норматива не найдена.", "error")
+        return redirect(admin_redirect_path("norm-checks"))
+    return render(
+        request,
+        "administration_norm_check_detail.html",
+        "Администрация • Итог нормы",
+        "administration_norm_checks",
+        detail=build_norm_check_detail(check),
+        norm_status_labels=NORM_CHECK_STATUS_LABELS,
+    )
+
+
+@app.post("/administration/norm-checks/{check_id}/share", name="administration_share_norm_check")
+async def administration_share_norm_check(
+    request: Request,
+    check_id: int,
+    csrf_token: str = Form(...),
+):
+    actor = require_auth(request)
+    if actor is None:
+        return norm_check_json_error("Требуется авторизация.", 401)
+    if not can_access_admin_reviews(actor):
+        return norm_check_json_error("Недостаточно прав.", 403)
+    if not validate_csrf(request, csrf_token):
+        return norm_check_json_error("Сессия формы устарела.", 400)
+    check = NormativeChecks.get_or_none(NormativeChecks.id == check_id)
+    if check is None:
+        return norm_check_json_error("Проверка норматива не найдена.", 404)
+    if not (check.is_public or 0):
+        check.is_public = 1
+        check.updated_at = now_ts()
+        check.save()
+    return {
+        "ok": True,
+        "url": str(request.url_for("public_norm_check_detail", check_id=check.id)),
+    }
+
+
+@app.get("/adm/n{check_id:int}", response_class=HTMLResponse, name="public_norm_check_detail")
+async def public_norm_check_detail(request: Request, check_id: int):
+    check = NormativeChecks.get_or_none(NormativeChecks.id == check_id)
+    if check is None or not (check.is_public or 0):
+        raise StarletteHTTPException(status_code=404, detail="Проверка норматива не найдена.")
+    return templates.TemplateResponse(
+        request,
+        "administration_norm_check_public.html",
+        {
+            "request": request,
+            "page_title": "Проверка норматива администрации",
+            "detail": build_norm_check_detail(check),
+            "static_version": static_version(),
+        },
     )
 
 

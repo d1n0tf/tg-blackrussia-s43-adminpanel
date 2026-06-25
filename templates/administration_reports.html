@@ -3,91 +3,7 @@
 {% block content %}
 <section class="panel-card">
     <h3>ОТЧЁТНОСТЬ АДМИНИСТРАЦИИ</h3>
-    <p class="section-copy">Ежедневные нормативы и дополнительные ответы на проверке.</p>
-</section>
-
-<section class="panel-card">
-    <div class="section-head">
-        <h3>ЕЖЕДНЕВНЫЙ НОРМАТИВ</h3>
-        <span>Страница {{ objective_page }}</span>
-    </div>
-    {% if pending_objective_rows %}
-        <div class="table-wrap">
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Ник</th>
-                        <th>Дата</th>
-                        <th>Норматив</th>
-                        <th>Рассмотреть</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in pending_objective_rows %}
-                        <tr>
-                            <td data-label="ID">{{ row.id }}</td>
-                            <td data-label="Ник">{{ row.user_name }}</td>
-                            <td data-label="Дата">
-                                {{ row.created_at }}
-                            </td>
-                            <td data-label="Норматив">
-                                <div class="proof-list">
-                                    {% for item in row.attachments %}
-                                        {% set file_href = request.url_for('download_attachment', entity='report', record_id=row.id, index=loop.index0) %}
-                                        <div class="proof-item">
-                                            <strong class="proof-name">{{ item.name }}</strong>
-                                            <div class="proof-actions">
-                                                {% if item.is_image %}
-                                                    <a href="{{ file_href }}?mode=view" data-no-live>Открыть</a>
-                                                {% endif %}
-                                                <a href="{{ file_href }}">Скачать</a>
-                                            </div>
-                                        </div>
-                                    {% endfor %}
-                                </div>
-                            </td>
-                            <td data-label="Рассмотреть">
-                                <button type="button" class="button button-secondary summary-button review-trigger" data-review-toggle="admin-report-objective-{{ row.id }}" aria-expanded="false">Рассмотреть</button>
-                            </td>
-                        </tr>
-                        <tr class="review-panel-row" data-review-panel="admin-report-objective-{{ row.id }}" data-live-key="admin-report-objective-{{ row.id }}" hidden>
-                            <td colspan="5" class="review-panel-cell">
-                                <div class="review-body review-body-wide">
-                                    <form method="post" action="{{ request.url_for('review_report', scope='admins', report_id=row.id) }}" class="stack-form">
-                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                        <label>
-                                            <span>Количество ответов</span>
-                                            <input type="number" name="amount" min="0" value="0" required>
-                                        </label>
-                                        <label>
-                                            <span>Комментарий / причина отказа</span>
-                                            <textarea name="result" rows="3"></textarea>
-                                        </label>
-                                        <div class="review-actions">
-                                            <button type="submit" name="decision" value="reject" class="button button-danger">Отказать</button>
-                                            <button type="submit" name="decision" value="approve_objective" class="button button-primary">Одобрить</button>
-                                            <button type="submit" name="decision" value="approve_answers" class="button button-secondary">Ответы</button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        <div class="pager">
-            {% if objective_page > 1 %}
-                <a href="{{ query_with(objective_page=objective_page - 1) }}" class="button button-secondary">Назад</a>
-            {% endif %}
-            {% if objective_has_next %}
-                <a href="{{ query_with(objective_page=objective_page + 1) }}" class="button button-secondary">Дальше</a>
-            {% endif %}
-        </div>
-    {% else %}
-        <p class="empty-state">Новых нормативов на проверке нет.</p>
-    {% endif %}
+    <p class="section-copy">Дополнительные ответы администрации на проверке.</p>
 </section>
 
 <section class="panel-card">
@@ -184,7 +100,6 @@
                 <thead>
                     <tr>
                         <th>ID</th>
-                        <th>Тип</th>
                         <th>Ник</th>
                         <th>Дата</th>
                         <th>Фотки</th>
@@ -197,7 +112,6 @@
                     {% for row in history_rows %}
                         <tr>
                             <td data-label="ID">{{ row.id }}</td>
-                            <td data-label="Тип">{{ row.type }}</td>
                             <td data-label="Ник">{{ row.user_name }}</td>
                             <td data-label="Дата">
                                 {{ row.created_at }}

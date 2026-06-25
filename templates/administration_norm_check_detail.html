@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel-card">
+    <div class="section-head">
+        <div>
+            <h3>ПРОВЕРКА НОРМАТИВА АДМИНИСТРАЦИИ</h3>
+            <p class="section-copy">Итог проверки за {{ detail.summary.norm_date_label }}.</p>
+        </div>
+        <div class="section-actions">
+            <button
+                type="button"
+                class="button button-secondary"
+                data-copy-link="{{ request.url_for('public_norm_check_detail', check_id=detail.summary.id) }}"
+                data-share-url="{{ request.url_for('administration_share_norm_check', check_id=detail.summary.id) }}"
+                data-csrf-token="{{ csrf_token }}"
+            >Поделиться</button>
+            <a href="{{ request.url_for('administration_norm_checks_page') }}" class="button button-secondary">К списку</a>
+        </div>
+    </div>
+    <div class="info-grid">
+        <div><span>ID</span> <strong>{{ detail.summary.id }}</strong></div>
+        <div><span>Дата норматива</span> <strong>{{ detail.summary.norm_date_label }}</strong></div>
+        <div><span>Администраторов</span> <strong>{{ detail.summary.total }}</strong></div>
+        <div><span>Проверил</span> <strong>{{ detail.summary.created_by }}</strong></div>
+        <div><span>Создано</span> <strong>{{ detail.summary.created_at }}</strong></div>
+        <div><span>Итог</span> <strong>{{ detail.summary.completed }} / {{ detail.summary.inactive }} / {{ detail.summary.no_norm }}</strong></div>
+    </div>
+</section>
+
+<section class="grid norm-detail-grid">
+    <article class="panel-card">
+        <div class="section-head">
+            <h3>Выполнен норматив</h3>
+            <span>{{ detail.blocks.completed|length }}</span>
+        </div>
+        {% if detail.blocks.completed %}
+            <div class="table-wrap">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Ник</th>
+                            <th>Должность</th>
+                            <th>Ответы</th>
+                            <th>+1 день</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in detail.blocks.completed %}
+                            <tr>
+                                <td data-label="Ник">{{ row.nickname }}</td>
+                                <td data-label="Должность"><span class="{{ role_tone_class(row.role) }}">{{ row.role }}</span></td>
+                                <td data-label="Ответы">{{ row.answers }}</td>
+                                <td data-label="+1 день">{{ "Да" if row.counts_for_objective else "Нет" }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="empty-state">В этом блоке никого нет.</p>
+        {% endif %}
+    </article>
+
+    <article class="panel-card">
+        <div class="section-head">
+            <h3>Нет норматива</h3>
+            <span>{{ detail.blocks.no_norm|length }}</span>
+        </div>
+        {% if detail.blocks.no_norm %}
+            <div class="stack-list">
+                {% for row in detail.blocks.no_norm %}
+                    <div class="stack-item">
+                        <strong>{{ row.nickname }}</strong>
+                        <span>{{ row.role }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="empty-state">В этом блоке никого нет.</p>
+        {% endif %}
+    </article>
+
+    <article class="panel-card">
+        <div class="section-head">
+            <h3>Неактивы</h3>
+            <span>{{ detail.blocks.inactive|length }}</span>
+        </div>
+        {% if detail.blocks.inactive %}
+            <div class="stack-list">
+                {% for row in detail.blocks.inactive %}
+                    <div class="stack-item">
+                        <strong>{{ row.nickname }}</strong>
+                        <span>{{ row.inactive_info or row.role }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="empty-state">В этом блоке никого нет.</p>
+        {% endif %}
+    </article>
+</section>
+{% endblock %}

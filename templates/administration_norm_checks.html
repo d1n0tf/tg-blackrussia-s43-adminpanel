@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel-card">
+    <div class="section-head">
+        <div>
+            <h3>ПРОВЕРКА НОРМАТИВА АДМИНИСТРАЦИИ</h3>
+            <p class="section-copy">Массовая проверка ответов, дней нормы и неактивов за выбранную дату.</p>
+        </div>
+        <button type="button" class="button button-primary review-trigger admin-create-trigger" data-review-toggle="admin-norm-check-create" aria-expanded="false">Проверить норматив</button>
+    </div>
+    <form method="get" action="{{ request.url_for('administration_norm_checks_page') }}" class="inline-form norm-date-jump">
+        <label>
+            <span>Быстрый переход к дате</span>
+            <input type="date" name="norm_date" value="{{ selected_norm_date }}">
+        </label>
+        <button type="submit" class="button button-secondary">Перейти</button>
+        {% if selected_norm_date %}
+            <a href="{{ request.url_for('administration_norm_checks_page') }}" class="button button-secondary">Сбросить</a>
+        {% endif %}
+    </form>
+</section>
+
+<section class="panel-card" data-review-panel="admin-norm-check-create" data-live-key="admin-norm-check-create" hidden>
+    <div class="section-head">
+        <h3>Новая проверка</h3>
+        <span>Администраторы: {{ norm_admin_rows|length }}</span>
+    </div>
+    {% if norm_admin_rows %}
+        <form method="post" action="{{ request.url_for('administration_create_norm_check') }}" class="stack-form" data-norm-check-form data-norm-answer-url="{{ request.url_for('administration_apply_norm_answers') }}" data-norm-objective-url="{{ request.url_for('administration_apply_norm_objective') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="norm-check-toolbar">
+                <label class="norm-check-date">
+                    <span>Дата проверяемого норматива</span>
+                    <input type="date" name="norm_date" value="{{ selected_norm_date or today }}" required data-norm-date>
+                </label>
+                <div class="norm-check-actions" aria-label="Действия проверки норматива">
+                    <button type="button" class="button button-primary" data-norm-action="result">Результат</button>
+                    <button type="submit" class="button button-primary">Сохранить проверку</button>
+                </div>
+            </div>
+
+            <div class="norm-check-board">
+                <article class="norm-check-column norm-check-admins-column">
+                    <div class="norm-check-column-head">
+                        <h4>Администрация</h4>
+                        <span>Ответы и +1 день нормы</span>
+                    </div>
+                    <div class="norm-check-admin-list">
+                        {% for row in norm_admin_rows %}
+                            {% set admin = row.user %}
+                            <div class="norm-check-row" data-norm-row data-user-id="{{ admin.id }}" data-norm-nick="{{ admin.nickname }}" data-inactive-periods="{{ row.inactive_periods }}">
+                                <input type="hidden" name="user_id" value="{{ admin.id }}">
+                                <input type="hidden" name="objective_{{ admin.id }}" value="0" data-norm-objective>
+                                <input type="hidden" name="applied_answers_{{ admin.id }}" value="0" data-norm-applied-answers>
+                                <input type="hidden" name="applied_objective_{{ admin.id }}" value="0" data-norm-applied-objective>
+                                <input type="hidden" name="applied_objective_date_{{ admin.id }}" value="" data-norm-applied-objective-date>
+                                <input type="hidden" name="inactive_info_{{ admin.id }}" value="" data-norm-inactive-info>
+                                <input type="hidden" name="status_{{ admin.id }}" value="no_norm" data-norm-status>
+                                <div class="norm-check-person">
+                                    <strong>{{ admin.nickname }}</strong>
+                                    <span class="{{ role_tone_class(admin.role) }}">{{ admin.role }}</span>
+                                    <small class="norm-check-inactive-badge" data-norm-inactive-badge>Проверяю неактив...</small>
+                                </div>
+                                <label>
+                                    <span>Ответы</span>
+                                    <input type="number" name="answers_{{ admin.id }}" min="0" value="0" inputmode="numeric" data-norm-answers>
+                                    <small class="norm-sync-status" data-norm-sync-status aria-live="polite"></small>
+                                </label>
+                                <button type="button" class="button button-secondary norm-plus-button" data-norm-plus aria-pressed="false">+1</button>
+                                <div class="norm-status-buttons" aria-label="Перенести администратора в блок">
+                                    <button type="button" class="norm-status-button norm-status-button-completed" data-norm-status-button="completed" aria-label="Есть норматив" title="Есть норматив">
+                                        <span class="norm-status-icon">✓</span>
+                                        <span class="norm-status-text">Есть</span>
+                                    </button>
+                                    <button type="button" class="norm-status-button norm-status-button-missing" data-norm-status-button="no_norm" aria-label="Нет нормы" title="Нет нормы">
+                                        <span class="norm-status-icon">×</span>
+                                        <span class="norm-status-text">Нет</span>
+                                    </button>
+                                    <button type="button" class="norm-status-button norm-status-button-inactive" data-norm-status-button="inactive" aria-label="Неактив" title="Неактив">
+                                        <span class="norm-status-icon">–</span>
+                                        <span class="norm-status-text">Неактив</span>
+                                    </button>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </article>
+
+                <div class="norm-check-result-grid" id="norm-check-result-preview">
+                    <article class="norm-check-column">
+                        <div class="norm-check-column-head">
+                            <h4>Выполнен норматив</h4>
+                            <span data-norm-count="completed">0</span>
+                        </div>
+                        <div class="norm-preview-list" data-norm-preview="completed"></div>
+                    </article>
+                    <article class="norm-check-column">
+                        <div class="norm-check-column-head">
+                            <h4>Нет нормы</h4>
+                            <span data-norm-count="no_norm">0</span>
+                        </div>
+                        <div class="norm-preview-list" data-norm-preview="no_norm"></div>
+                    </article>
+                    <article class="norm-check-column">
+                        <div class="norm-check-column-head">
+                            <h4>Неактивы</h4>
+                            <span data-norm-count="inactive">0</span>
+                        </div>
+                        <div class="norm-preview-list" data-norm-preview="inactive"></div>
+                    </article>
+                </div>
+            </div>
+        </form>
+    {% else %}
+        <p class="empty-state">Нет администраторов подходящих ролей для проверки.</p>
+    {% endif %}
+</section>
+
+<section class="panel-card">
+    <div class="section-head">
+        <h3>История проверок</h3>
+        <span>Страница {{ page }}</span>
+    </div>
+    {% if rows %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Дата норматива</th>
+                        <th>Администраторов</th>
+                        <th>Выполнили</th>
+                        <th>Неактивов</th>
+                        <th>Нет нормы</th>
+                        <th>Смотреть</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                        <tr>
+                            <td data-label="ID">{{ row.id }}</td>
+                            <td data-label="Дата норматива">{{ row.norm_date_label }}</td>
+                            <td data-label="Администраторов">{{ row.total }}</td>
+                            <td data-label="Выполнили">{{ row.completed }}</td>
+                            <td data-label="Неактивов">{{ row.inactive }}</td>
+                            <td data-label="Нет нормы">{{ row.no_norm }}</td>
+                            <td data-label="Смотреть">
+                                <div class="norm-share-actions">
+                                    <a href="{{ request.url_for('administration_norm_check_detail', check_id=row.id) }}" class="button button-secondary summary-button">Смотреть</a>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="pager">
+            {% if page > 1 %}
+                <a href="{{ query_with(page=page - 1) }}" class="button button-secondary">Назад</a>
+            {% endif %}
+            {% if has_next %}
+                <a href="{{ query_with(page=page + 1) }}" class="button button-secondary">Дальше</a>
+            {% endif %}
+        </div>
+    {% else %}
+        <p class="empty-state">Проверок за выбранную дату пока нет.</p>
+    {% endif %}
+</section>
+{% endblock %}

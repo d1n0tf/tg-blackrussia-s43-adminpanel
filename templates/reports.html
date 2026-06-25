@@ -15,19 +15,11 @@
             data-max-files="{{ upload_max_files }}"
         >
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <div class="split-fields">
-                <label>
-                    <span>Тип</span>
-                    <select name="report_type" required>
-                        <option value="objective">Норматив</option>
-                        <option value="additional">Доп. ответы</option>
-                    </select>
-                </label>
-                <label>
-                    <span>Дата</span>
-                    <input type="date" name="report_date" value="{{ today }}" required>
-                </label>
-            </div>
+            <input type="hidden" name="report_type" value="additional">
+            <label>
+                <span>Дата</span>
+                <input type="date" name="report_date" value="{{ today }}" required>
+            </label>
             <label>
                 <span>Файлы или скриншоты</span>
                 <input type="file" name="attachments" id="report-attachments" multiple required>
@@ -52,7 +44,7 @@
     <article class="panel-card">
         <h3>Подсказка</h3>
         <div class="callout">
-            <p>Для норматива можно прикреплять скриншот или набор файлов, а при проверке куратор укажет, сколько ответов зачесть и считать ли отчёт днём норматива.</p>
+            <p>Здесь отправляются только доп. ответы для администрации. Норматив теперь проверяется отдельно через раздел администрации.</p>
             <p>Лимит загрузки: до {{ upload_max_file_label }} на файл и до {{ upload_max_total_label }} за одну отправку. Если телефон долго грузит видео, лучше отправлять его по стабильному Wi-Fi.</p>
         </div>
     </article>
@@ -70,7 +62,6 @@
                     <tr>
                         <th>ID</th>
                         <th>Дата</th>
-                        <th>Тип</th>
                         <th>Файлы</th>
                         <th>Статус</th>
                         <th>Проверил</th>
@@ -86,7 +77,6 @@
                                 <br>
                                 <span class="muted-copy">Отправлено: {{ row.created_at }}</span>
                             </td>
-                            <td data-label="Тип">{{ row.type }}</td>
                             <td data-label="Файлы">
                                 <div class="cell-links">
                                     {% for item in row.attachments %}
