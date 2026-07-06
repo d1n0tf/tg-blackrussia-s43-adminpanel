@@ -27,6 +27,7 @@
                 <thead>
                     <tr>
                         <th>ID</th>
+                        <th>Дата</th>
                         <th>Форма</th>
                         <th>Доказательства</th>
                         <th>Отправитель</th>
@@ -37,6 +38,7 @@
                     {% for row in pending_rows %}
                         <tr>
                             <td data-label="ID">{{ row.id }}</td>
+                            <td data-label="Дата">{{ row.created_at }}</td>
                             <td data-label="Форма"><code>{{ row.form }}</code></td>
                             <td data-label="Доказательства">
                                 <div class="proof-list">
@@ -64,7 +66,7 @@
                             </td>
                         </tr>
                         <tr class="review-panel-row" data-review-panel="admin-form-review-{{ row.id }}" data-live-key="admin-form-review-{{ row.id }}" hidden>
-                            <td colspan="5" class="review-panel-cell">
+                            <td colspan="6" class="review-panel-cell">
                                 <div class="review-body review-body-wide">
                                     <form method="post" action="{{ request.url_for('review_form', scope='admins', form_id=row.id) }}" class="stack-form">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -108,18 +110,20 @@
                 <thead>
                     <tr>
                         <th>ID</th>
+                        <th>Дата</th>
                         <th>Форма</th>
                         <th>Доказательства</th>
                         <th>Отправитель</th>
                         <th>Статус</th>
                         <th>Рассмотрел</th>
-                        <th>Дата</th>
+                        <th>Дата обработки</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for row in history_rows %}
                         <tr>
                             <td data-label="ID">{{ row.id }}</td>
+                            <td data-label="Дата">{{ row.created_at }}</td>
                             <td data-label="Форма"><code>{{ row.form }}</code></td>
                             <td data-label="Доказательства">
                                 <div class="proof-list">
@@ -144,7 +148,7 @@
                             <td data-label="Отправитель">{{ row.user.nickname if row.user else '—' }}</td>
                             <td data-label="Статус">{{ status_label.get(row.status, row.status) }}</td>
                             <td data-label="Рассмотрел">{{ row.processed_by }}</td>
-                            <td data-label="Дата">{{ row.processed_at }}</td>
+                            <td data-label="Дата обработки">{{ row.processed_at }}</td>
                         </tr>
                     {% endfor %}
                 </tbody>

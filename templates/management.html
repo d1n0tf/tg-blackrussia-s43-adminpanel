@@ -72,6 +72,9 @@
                         <th>Ник</th>
                         <th>{{ 'Фракция' if scope == 'leaders' else 'Должность' }}</th>
                         <th>Назначен</th>
+                        {% if scope == "leaders" %}
+                            <th>До перевода</th>
+                        {% endif %}
                         {% if scope == "support" %}
                             <th>Дней на посту</th>
                             <th>Дней до перевода</th>
@@ -84,7 +87,7 @@
                 <tbody>
                     {% for item in users %}
                         {% set is_open = selected and selected.id == item.id and selected_card %}
-                        {% set row_stats = support_row_stats.get(item.id) if scope == "support" else none %}
+                        {% set row_stats = management_row_stats.get(item.id) if scope in ["leaders", "support"] else none %}
                         <tr id="management-user-{{ item.id }}">
                             <td data-label="№">{{ loop.index }}</td>
                             <td data-label="Ник">{{ item.nickname }}</td>
@@ -95,7 +98,10 @@
                                     <span class="{{ role_tone_class(item.role) }}">{{ item.role }}</span>
                                 {% endif %}
                             </td>
-                            <td data-label="Назначен">{{ item.appointed|datetime_display }}</td>
+                            <td data-label="Назначен">{{ row_stats.appointed_text if scope == "leaders" and row_stats else item.appointed|datetime_display }}</td>
+                            {% if scope == "leaders" %}
+                                <td data-label="До перевода">{{ row_stats.days_left_text if row_stats else "—" }}</td>
+                            {% endif %}
                             {% if scope == "support" %}
                                 <td data-label="Дней на посту">{{ row_stats.appointed_days_text if row_stats else "—" }}</td>
                                 <td data-label="Дней до перевода">{{ row_stats.days_left_text if row_stats else "—" }}</td>
@@ -108,7 +114,7 @@
                         </tr>
                         {% if is_open %}
                             <tr class="review-panel-row">
-                                <td colspan="{{ 9 if scope == 'support' else 7 }}" class="review-panel-cell">
+                                <td colspan="{{ 9 if scope == 'support' else (8 if scope == 'leaders' else 7) }}" class="review-panel-cell">
                                     <div class="review-body review-body-wide management-control-body">
                                         <div class="info-grid management-summary-grid">
                                             <div><span>Ник</span> <strong>{{ selected_card.nickname }}</strong></div>

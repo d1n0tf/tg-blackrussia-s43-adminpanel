@@ -74,6 +74,8 @@
                         <th>Период</th>
                         <th>Статус</th>
                         <th>Причина</th>
+                        <th>Дата обработки</th>
+                        <th>Снятые ответы/аски/баллы</th>
                         <th>Ответственный</th>
                     </tr>
                 </thead>
@@ -90,6 +92,8 @@
                                     <span class="muted-copy">Комментарий: {{ row.process_comment }}</span>
                                 {% endif %}
                             </td>
+                            <td data-label="Дата обработки">{{ row.processed_at }}</td>
+                            <td data-label="Снятые ответы/аски/баллы">{{ row.penalty_text }}</td>
                             <td data-label="Ответственный">{{ row.processed_by }}</td>
                         </tr>
                     {% endfor %}

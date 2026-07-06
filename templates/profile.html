@@ -233,8 +233,9 @@
                         <th>Период</th>
                         <th>Статус</th>
                         <th>Причина</th>
+                        <th>Дата обработки</th>
+                        <th>Снятые ответы/аски/баллы</th>
                         <th>Рассмотрел</th>
-                        <th>Дата</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -244,8 +245,9 @@
                             <td data-label="Период">{{ row.start }} → {{ row.end }}</td>
                             <td data-label="Статус">{{ row.status }}</td>
                             <td data-label="Причина">{{ row.reason }}</td>
+                            <td data-label="Дата обработки">{{ row.processed_at }}</td>
+                            <td data-label="Снятые ответы/аски/баллы">{{ row.penalty_text }}</td>
                             <td data-label="Рассмотрел">{{ row.processed_by }}</td>
-                            <td data-label="Дата">{{ row.processed_at }}</td>
                         </tr>
                     {% endfor %}
                 </tbody>

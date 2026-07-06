@@ -426,6 +426,37 @@ label span,
     align-items: start;
 }
 
+.admin-user-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+    align-items: start;
+}
+
+.admin-user-info-column,
+.admin-user-edit-column {
+    display: grid;
+    gap: 0.95rem;
+}
+
+.info-grid.admin-user-info-column {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.admin-punishment-fields {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.admin-punishment-fields > span {
+    font-size: 0.86rem;
+    color: var(--muted);
+}
+
+.split-fields.admin-punishment-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .dismiss-user-form {
     align-self: start;
 }
@@ -981,6 +1012,23 @@ textarea {
     min-width: 10.5rem;
 }
 
+.norm-list-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.55rem;
+    min-width: max-content;
+}
+
+.norm-list-actions .summary-button {
+    width: auto;
+    justify-content: center;
+    white-space: nowrap;
+}
+
+.norm-list-actions .summary-button::after {
+    display: none;
+}
+
 .norm-share-button {
     width: 100%;
     border: 1px solid var(--line);
@@ -1495,6 +1543,8 @@ textarea {
 @media (max-width: 1080px) {
     .management-grid,
     .admin-user-actions-grid,
+    .admin-user-detail-grid,
+    .split-fields.admin-punishment-grid,
     .norm-check-board,
     .norm-check-toolbar,
     .norm-detail-grid,

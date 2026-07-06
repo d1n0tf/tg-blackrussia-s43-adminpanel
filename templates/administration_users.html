@@ -51,6 +51,7 @@
                         <th>Должность</th>
                         <th>Назначен</th>
                         <th>Последнее повышение</th>
+                        <th>Дней норматива</th>
                         <th>Ответы</th>
                         <th>Наказания</th>
                         <th>Кем назначен</th>
@@ -66,8 +67,9 @@
                             <td data-label="№">{{ loop.index }}</td>
                             <td data-label="Ник">{{ item.nickname }}</td>
                             <td data-label="Должность"><span class="{{ role_tone_class(item.role) }}">{{ item.role }}</span></td>
-                            <td data-label="Назначен">{{ item.appointed|datetime_display }}</td>
+                            <td data-label="Назначен">{{ row.appointed_text }}</td>
                             <td data-label="Последнее повышение">{{ item.promoted|datetime_display }}</td>
+                            <td data-label="Дней норматива">{{ row.objective_completed_text }}</td>
                             <td data-label="Ответы">{{ item.apa }}</td>
                             <td data-label="Наказания">{{ item.rebuke }} \ {{ item.warn }} \ {{ item.verbal }}</td>
                             <td data-label="Кем назначен">{{ row.appointed_by }}</td>
@@ -77,25 +79,31 @@
                         </tr>
                         {% if is_open %}
                             <tr class="review-panel-row">
-                                <td colspan="9" class="review-panel-cell">
+                                <td colspan="10" class="review-panel-cell">
                                     <div class="review-body review-body-wide">
-                                        <div class="info-grid">
-                                            <div><span>Ник</span> <strong>{{ card.nickname }}</strong></div>
-                                            <div><span>Должность</span> <strong class="{{ card.role_tone_class }}">{{ card.role }}</strong></div>
-                                            <div><span>Назначен</span> <strong>{{ card.appointed }}</strong></div>
-                                            <div><span>Последнее повышение</span> <strong>{{ card.promoted }}</strong></div>
-                                            <div><span>Кем назначен</span> <strong>{{ row.appointed_by }}</strong></div>
-                                            <div><span>Возраст</span> <strong>{{ card.age_text }} · {{ card.birth_date }}</strong></div>
-                                            <div><span>Город</span> <strong>{{ card.city }}</strong></div>
-                                            <div><span>Количество ответов</span> <strong>{{ card.apa_text }}</strong></div>
-                                            <div><span>Количество монеток</span> <strong>{{ card.coins_text }}</strong></div>
-                                            <div><span>Дней выполненного норматива</span> <strong>{{ card.days_left_value }}</strong></div>
-                                            <div><span>Дней в неактиве</span> <strong>{{ card.inactive_total_days_text }}</strong></div>
-                                            <div><span>Наказания</span> <strong>{{ card.rebuke }} / {{ card.warn }} / {{ card.verbal }}</strong></div>
-                                            <div><span>Discord</span> <strong>{{ card.discord_id or "—" }}</strong></div>
-                                            <div><span>Telegram</span> <strong>{{ card.telegram_id or "—" }}</strong></div>
-                                            <div><span>ВКонтакте</span> <strong>{{ card.vk or "—" }}</strong></div>
-                                            <div><span>Форум</span> <strong>{{ card.forum or "—" }}</strong></div>
+                                        <div class="admin-user-detail-grid">
+                                            <div class="info-grid admin-user-info-column">
+                                                <div><span>Ник</span> <strong>{{ card.nickname }}</strong></div>
+                                                <div><span>Должность</span> <strong class="{{ card.role_tone_class }}">{{ card.role }}</strong></div>
+                                                <div><span>Назначен</span> <strong>{{ card.appointed }}</strong></div>
+                                                <div><span>Дней на посту</span> <strong>{{ card.appointed_days_text }}</strong></div>
+                                                <div><span>Последнее повышение</span> <strong>{{ card.promoted }}</strong></div>
+                                                <div><span>Дней норматива</span> <strong>{{ card.days_left_value }}</strong></div>
+                                                <div><span>Количество ответов</span> <strong>{{ card.apa_text }}</strong></div>
+                                                <div><span>Количество монеток</span> <strong>{{ card.coins_text }}</strong></div>
+                                                <div><span>Наказания</span> <strong>{{ card.rebuke }} / {{ card.warn }} / {{ card.verbal }}</strong></div>
+                                            </div>
+                                            <div class="info-grid admin-user-info-column">
+                                                <div><span>Кем назначен</span> <strong>{{ row.appointed_by }}</strong></div>
+                                                <div><span>Имя</span> <strong>{{ card.name }}</strong></div>
+                                                <div><span>Город</span> <strong>{{ card.city }}</strong></div>
+                                                <div><span>Возраст</span> <strong>{{ card.age_text }} · {{ card.birth_date }}</strong></div>
+                                                <div><span>Discord</span> <strong>{{ card.discord_id or "—" }}</strong></div>
+                                                <div><span>Telegram</span> <strong>{{ card.telegram_id or "—" }}</strong></div>
+                                                <div><span>ВКонтакте</span> <strong>{{ card.vk or "—" }}</strong></div>
+                                                <div><span>Форум</span> <strong>{{ card.forum or "—" }}</strong></div>
+                                                <div><span>Дней в неактиве</span> <strong>{{ card.inactive_total_days_text }}</strong></div>
+                                            </div>
                                         </div>
                                         {% if card.current_inactive %}
                                             <article class="panel-subcard">
@@ -111,39 +119,44 @@
                                             <form method="post" action="{{ request.url_for('administration_update_user', user_id=item.id) }}" class="panel-subform">
                                                 <h4>Изменить информацию</h4>
                                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                                <div class="split-fields">
-                                                    <label><span>Ник</span><input type="text" name="nickname" value="{{ item.nickname }}" required></label>
-                                                    <label>
-                                                        <span>Должность</span>
-                                                        <select name="role_value" required>
-                                                            {% for role in role_options %}
-                                                                <option value="{{ role }}" {% if item.role == role %}selected{% endif %}>{{ role }}</option>
-                                                            {% endfor %}
-                                                        </select>
-                                                    </label>
+                                                <div class="admin-user-detail-grid admin-user-edit-grid">
+                                                    <div class="admin-user-edit-column">
+                                                        <label><span>Ник</span><input type="text" name="nickname" value="{{ item.nickname }}" required></label>
+                                                        <label>
+                                                            <span>Должность</span>
+                                                            <select name="role_value" required>
+                                                                {% for role in role_options %}
+                                                                    <option value="{{ role }}" {% if item.role == role %}selected{% endif %}>{{ role }}</option>
+                                                                {% endfor %}
+                                                            </select>
+                                                        </label>
+                                                        <label><span>Назначен</span><input type="datetime-local" name="appointed_at" value="{{ item.appointed|datetime_local_to_input }}" required></label>
+                                                        <label><span>Дней на посту</span><input type="text" value="{{ card.appointed_days_text }}" readonly></label>
+                                                        <label><span>Последнее повышение</span><input type="datetime-local" name="promoted_at" value="{{ item.promoted|datetime_local_to_input }}"></label>
+                                                        <label><span>Дней норматива</span><input type="number" name="objective_completed" min="0" value="{{ item.objective_completed or 0 }}" required></label>
+                                                        <label><span>Количество ответов</span><input type="number" name="apa" min="0" value="{{ item.apa }}" required></label>
+                                                        <label><span>Количество монеток</span><input type="number" name="coins" min="0" value="{{ item.coins }}" required></label>
+                                                        <div class="admin-punishment-fields">
+                                                            <span>Наказания</span>
+                                                            <div class="split-fields admin-punishment-grid">
+                                                                <label><span>Выговоры</span><input type="number" name="rebuke" min="0" value="{{ item.rebuke }}" required></label>
+                                                                <label><span>Предупреждения</span><input type="number" name="warn" min="0" value="{{ item.warn }}" required></label>
+                                                                <label><span>Устники</span><input type="number" name="verbal" min="0" value="{{ item.verbal }}" required></label>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="admin-user-edit-column">
+                                                        <label><span>Кем назначен</span><input type="text" value="{{ row.appointed_by }}" readonly></label>
+                                                        <label><span>Имя</span><input type="text" name="name" value="{{ item.name }}" required></label>
+                                                        <label><span>Город</span><input type="text" name="city" value="{{ item.city }}" required></label>
+                                                        <label><span>Возраст</span><input type="date" name="birth_date" value="{{ item.age|datetime_to_input }}" required></label>
+                                                        <label><span>Discord</span><input type="text" name="discord_id" value="{{ item.discord_id if item.discord_id else '' }}"></label>
+                                                        <label><span>Telegram</span><input type="text" name="telegram_id" value="{{ item.telegram_id if item.telegram_id else '' }}" required></label>
+                                                        <label><span>ВКонтакте</span><input type="text" name="vk" value="{{ item.vk }}"></label>
+                                                        <label><span>Форум</span><input type="text" name="forum" value="{{ item.forum }}"></label>
+                                                        <label><span>Дней в неактиве</span><input type="text" value="{{ card.inactive_total_days_text }}" readonly></label>
+                                                    </div>
                                                 </div>
-                                                <div class="split-fields">
-                                                    <label><span>Имя</span><input type="text" name="name" value="{{ item.name }}" required></label>
-                                                    <label><span>Дата рождения</span><input type="date" name="birth_date" value="{{ item.age|datetime_to_input }}" required></label>
-                                                </div>
-                                                <label><span>Город</span><input type="text" name="city" value="{{ item.city }}" required></label>
-                                                <div class="split-fields">
-                                                    <label><span>Discord ID</span><input type="text" name="discord_id" value="{{ item.discord_id if item.discord_id else '' }}"></label>
-                                                    <label><span>Telegram ID</span><input type="text" name="telegram_id" value="{{ item.telegram_id if item.telegram_id else '' }}" required></label>
-                                                </div>
-                                                <div class="split-fields">
-                                                    <label><span>ВКонтакте</span><input type="text" name="vk" value="{{ item.vk }}"></label>
-                                                    <label><span>Форум</span><input type="text" name="forum" value="{{ item.forum }}"></label>
-                                                </div>
-                                                <div class="split-fields">
-                                                    <label><span>Ответы</span><input type="number" name="apa" min="0" value="{{ item.apa }}" required></label>
-                                                    <label><span>Дни норматива</span><input type="number" name="objective_completed" min="0" value="{{ item.objective_completed or 0 }}" required></label>
-                                                </div>
-                                                <div class="split-fields">
-                                                    <label><span>Выговоры</span><input type="number" name="rebuke" min="0" value="{{ item.rebuke }}" required></label>
-                                                    <label><span>Предупреждения</span><input type="number" name="warn" min="0" value="{{ item.warn }}" required></label>
-                                                </div>
-                                                <label><span>Устники</span><input type="number" name="verbal" min="0" value="{{ item.verbal }}" required></label>
                                                 <button type="submit" class="button button-primary">Сохранить</button>
                                             </form>
                                             <form method="post" action="{{ request.url_for('administration_dismiss_user', user_id=item.id) }}" class="panel-subform dismiss-user-form">

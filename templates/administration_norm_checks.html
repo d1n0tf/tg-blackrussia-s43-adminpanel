@@ -155,7 +155,7 @@
                             <td data-label="Неактивов">{{ row.inactive }}</td>
                             <td data-label="Нет нормы">{{ row.no_norm }}</td>
                             <td data-label="Действия">
-                                <div class="norm-share-actions">
+                                <div class="norm-list-actions">
                                     <a href="{{ request.url_for('administration_norm_check_detail', check_id=row.id) }}" class="button button-secondary summary-button">Смотреть</a>
                                     <a href="{{ request.url_for('administration_norm_check_edit_page', check_id=row.id) }}" class="button button-secondary summary-button">Изменить</a>
                                 </div>

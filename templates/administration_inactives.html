@@ -27,6 +27,7 @@
                 <thead>
                     <tr>
                         <th>ID</th>
+                        <th>Дата</th>
                         <th>Ник</th>
                         <th>Причина</th>
                         <th>Дата начала</th>
@@ -40,6 +41,7 @@
                     {% for row in pending_rows %}
                         <tr>
                             <td data-label="ID">{{ row.id }}</td>
+                            <td data-label="Дата">{{ row.created_at }}</td>
                             <td data-label="Ник">{{ row.owner.nickname }}</td>
                             <td data-label="Причина">{{ row.reason }}</td>
                             <td data-label="Дата начала">{{ row.start }}</td>
@@ -51,7 +53,7 @@
                             </td>
                         </tr>
                         <tr class="review-panel-row" data-review-panel="admin-inactive-request-{{ row.id }}" data-live-key="admin-inactive-request-{{ row.id }}" hidden>
-                            <td colspan="8" class="review-panel-cell">
+                            <td colspan="9" class="review-panel-cell">
                                 <div class="review-body review-body-wide">
                                     <div class="review-copy">
                                         <p><strong>Ник:</strong> {{ row.owner.nickname }}</p>
@@ -59,6 +61,9 @@
                                         <p><strong>Дней всего:</strong> {{ row.total_days_text }}</p>
                                         <p><strong>Ответов сейчас:</strong> {{ row.answers }}</p>
                                         <p><strong>Снимется при одобрении:</strong> {{ row.penalty }}</p>
+                                        <p><strong>Неактивов за неделю:</strong> {{ row.inactive_week_text }}</p>
+                                        <p><strong>Неактивов за месяц:</strong> {{ row.inactive_month_text }}</p>
+                                        <p><strong>Неактивов за все время:</strong> {{ row.inactive_all_text }}</p>
                                     </div>
                                     <form method="post" action="{{ request.url_for('review_inactive_request', scope='admins', request_id=row.id) }}" class="stack-form">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -194,9 +199,10 @@
                         <th>Дата начала</th>
                         <th>Дата конца</th>
                         <th>Причина</th>
+                        <th>Дата обработки</th>
+                        <th>Снятые ответы/аски/баллы</th>
                         <th>Статус</th>
                         <th>Одобрил</th>
-                        <th>Одобрил когда</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -213,9 +219,10 @@
                                     <span class="muted-copy">Комментарий: {{ row.process_comment }}</span>
                                 {% endif %}
                             </td>
+                            <td data-label="Дата обработки">{{ row.approved_at }}</td>
+                            <td data-label="Снятые ответы/аски/баллы">{{ row.penalty_text }}</td>
                             <td data-label="Статус">{{ row.status }}</td>
                             <td data-label="Одобрил">{{ row.processed_by }}</td>
-                            <td data-label="Одобрил когда">{{ row.approved_at }}</td>
                         </tr>
                     {% endfor %}
                 </tbody>

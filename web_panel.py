@@ -12,7 +12,7 @@ import re
 import secrets
 import time
 from contextlib import asynccontextmanager, suppress
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
@@ -155,6 +155,7 @@ PUNISHMENT_LABELS = {
     "warn": "Предупреждение",
     "verbal": "Устное предупреждение",
 }
+AUTO_CLOSED_PUNISHMENT_PREFIX = "Автоматически закрыто:"
 METRIC_LABELS = {
     "leaders": ("балл", "балла", "баллов"),
     "support": ("аск", "аска", "асков"),
@@ -229,6 +230,19 @@ def format_datetime(timestamp: int | None) -> str:
 
 def format_appointment(timestamp: int) -> str:
     return moscow_from_timestamp(timestamp).strftime("%d.%m.%Y / %H:%M")
+
+
+def days_text(days: int) -> str:
+    return f"{days} {plural_word(days, ('день', 'дня', 'дней'))}"
+
+
+def days_since(timestamp: int | float) -> int:
+    return max(math.ceil((time.time() - timestamp) / 86400), 0)
+
+
+def format_appointment_with_days(timestamp: int | float) -> str:
+    days = days_since(timestamp)
+    return f"{format_appointment(timestamp)} ({days_text(days)})"
 
 
 def datetime_to_input(timestamp: int | None) -> str:
@@ -570,6 +584,7 @@ def profile_role_options(actor: Users, target: Users) -> list[str]:
 
 def count_actionable_punishment_requests_for_admins(admin_lookup: dict[str, Users]) -> int:
     pending_keys: set[tuple[int, str]] = set()
+    active_types_cache: dict[int, set[str]] = {}
     for record in (
         PunishmentsRequests.select()
         .where(PunishmentsRequests.status == "pending")
@@ -578,7 +593,8 @@ def count_actionable_punishment_requests_for_admins(admin_lookup: dict[str, User
         owner = admin_lookup.get(str(record.telegram_id))
         if owner is None:
             continue
-        if int(getattr(owner, record.punishment, 0) or 0) <= 0:
+        active_types = active_types_cache.setdefault(owner.id, active_punishment_types(owner))
+        if record.punishment not in active_types:
             continue
         pending_keys.add((owner.id, record.punishment))
     return len(pending_keys)
@@ -939,13 +955,17 @@ def scope_sort_key(scope: str, user: Users) -> tuple[Any, ...]:
     return (ROLES.index(user.role), promoted, user.nickname)
 
 
-def support_management_row_stats(user: Users) -> dict[str, str]:
-    appointed_days = max(math.ceil((time.time() - user.appointed) / 86400), 0)
-    transfer_days = int(db_setting(Settings_s, "transferamnt_d", 10))
+def management_row_stats(user: Users, scope: str) -> dict[str, str]:
+    appointed_days = days_since(user.appointed)
+    if scope == "leaders":
+        transfer_days = int(db_setting(Settings_l, "term_days", LEADERS_TIME_LEFT))
+    else:
+        transfer_days = int(db_setting(Settings_s, "transferamnt_d", 10))
     days_left = max(transfer_days - appointed_days, 0)
     return {
-        "appointed_days_text": f"{appointed_days} {plural_word(appointed_days, ('день', 'дня', 'дней'))}",
-        "days_left_text": f"{days_left} {plural_word(days_left, ('день', 'дня', 'дней'))}",
+        "appointed_text": format_appointment_with_days(user.appointed),
+        "appointed_days_text": days_text(appointed_days),
+        "days_left_text": days_text(days_left),
     }
 
 
@@ -966,6 +986,25 @@ def apply_penalty(user: Users, amount: int) -> None:
     user.save()
 
 
+def inactive_record_scope(record: Inactives) -> str:
+    if record.fraction:
+        return "leaders"
+    if record.role in SUPPORT_ROLES:
+        return "support"
+    return "admins"
+
+
+def inactive_penalty_text(record: Inactives) -> str:
+    amount = getattr(record, "penalty_amount", None)
+    if amount is None:
+        return "—"
+    try:
+        amount = max(int(amount), 0)
+    except (TypeError, ValueError):
+        return "—"
+    return f"{amount} {plural_word(amount, METRIC_LABELS[inactive_record_scope(record)])}"
+
+
 def inactive_total_days(user: Users) -> int:
     total = 0
     rows = Inactives.select().where(
@@ -980,6 +1019,49 @@ def inactive_total_days(user: Users) -> int:
             continue
         total += (end.date() - start.date()).days + 1
     return total
+
+
+def inactive_days_in_range(user: Users, range_start: date, range_end: date) -> int:
+    total = 0
+    rows = Inactives.select().where(
+        Inactives.nickname == user.nickname,
+        Inactives.status == "Одобрен",
+    )
+    for row in rows:
+        try:
+            start = parse_ru_date(row.start).date()
+            end = parse_ru_date(row.end).date()
+        except Exception:
+            continue
+        overlap_start = max(start, range_start)
+        overlap_end = min(end, range_end)
+        if overlap_start <= overlap_end:
+            total += (overlap_end - overlap_start).days + 1
+    return total
+
+
+def inactive_period_stats(user: Users) -> dict[str, str | int]:
+    today = moscow_now().date()
+    week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=6)
+    month_start = today.replace(day=1)
+    if month_start.month == 12:
+        next_month = month_start.replace(year=month_start.year + 1, month=1)
+    else:
+        next_month = month_start.replace(month=month_start.month + 1)
+    month_end = next_month - timedelta(days=1)
+
+    week_days = inactive_days_in_range(user, week_start, week_end)
+    month_days = inactive_days_in_range(user, month_start, month_end)
+    total_days = inactive_total_days(user)
+    return {
+        "inactive_week_days": week_days,
+        "inactive_week_text": days_text(week_days),
+        "inactive_month_days": month_days,
+        "inactive_month_text": days_text(month_days),
+        "inactive_all_days": total_days,
+        "inactive_all_text": days_text(total_days),
+    }
 
 
 def current_inactive_info(user: Users) -> dict[str, Any] | None:
@@ -1430,6 +1512,19 @@ def punishment_entries(user: Users) -> tuple[list[dict[str, Any]], list[dict[str
     return active_rows, history_rows
 
 
+def active_punishment_types(user: Users) -> set[str]:
+    active, _ = punishment_entries(user)
+    return {row["type_key"] for row in active}
+
+
+def is_auto_closed_punishment_request(record: PunishmentsRequests) -> bool:
+    reason = (getattr(record, "reason", None) or "").strip()
+    return (
+        (getattr(record, "status", None) or "pending") == "rejected"
+        and reason.startswith(AUTO_CLOSED_PUNISHMENT_PREFIX)
+    )
+
+
 def last_punishment(user: Users) -> dict[str, str] | None:
     active, history = punishment_entries(user)
     if not history:
@@ -1461,7 +1556,7 @@ def user_card(user: Users) -> dict[str, Any]:
     scope = user_scope(user)
     display_role = user_display_role(user)
     structure = STRUCTURES.get(user.role) if user.role else None
-    appointed_days = max(math.ceil((time.time() - user.appointed) / 86400), 0)
+    appointed_days = days_since(user.appointed)
     current_inactive = current_inactive_info(user)
     last = last_punishment(user)
     age_years = calcage(user.age)
@@ -1478,6 +1573,7 @@ def user_card(user: Users) -> dict[str, Any]:
         "structure_tone_class": structure_tone_class(structure),
         "fraction": user.fraction,
         "appointed": format_appointment(user.appointed),
+        "appointed_with_days": format_appointment_with_days(user.appointed),
         "appointed_days": appointed_days,
         "name": user.name,
         "age": age_years,
@@ -1505,26 +1601,24 @@ def user_card(user: Users) -> dict[str, Any]:
         "days_left_label": "",
         "days_left_value": "",
         "support_transfer_asks": support_transfer_asks,
-        "appointed_days_text": f"{appointed_days} {plural_word(appointed_days, ('день', 'дня', 'дней'))}",
+        "appointed_days_text": days_text(appointed_days),
         "inactive_total_days_text": "",
         "coins_text": f"{user.coins} {plural_word(user.coins, ('монетка', 'монетки', 'монеток'))}",
     }
     inactive_days = card["inactive_total_days"]
-    card["inactive_total_days_text"] = (
-        f"{inactive_days} {plural_word(inactive_days, ('день', 'дня', 'дней'))}"
-    )
+    card["inactive_total_days_text"] = days_text(inactive_days)
     if scope == "leaders":
         days_left = max(leader_term - appointed_days, 0)
         card["days_left_label"] = "Дней до окончания срока"
-        card["days_left_value"] = f"{days_left} {plural_word(days_left, ('день', 'дня', 'дней'))}"
+        card["days_left_value"] = days_text(days_left)
     elif scope == "support":
         days_left = max(support_transfer_days - appointed_days, 0)
         card["days_left_label"] = "Дней до перевода"
-        card["days_left_value"] = f"{days_left} {plural_word(days_left, ('день', 'дня', 'дней'))}"
+        card["days_left_value"] = days_text(days_left)
     else:
         card["days_left_label"] = "Дней выполненного норматива"
         completed = user.objective_completed or 0
-        card["days_left_value"] = f"{completed} {plural_word(completed, ('день', 'дня', 'дней'))}"
+        card["days_left_value"] = days_text(completed)
     return card
 
 
@@ -1596,6 +1690,7 @@ def build_inactive_row(record: Inactives, user_lookup: dict[Any, Users] | None =
         "processed_at": format_datetime(getattr(record, "processed_at", None)),
         "process_comment": getattr(record, "process_comment", None) or None,
         "penalty_amount": getattr(record, "penalty_amount", None),
+        "penalty_text": inactive_penalty_text(record),
     }
 
 
@@ -1885,6 +1980,8 @@ def admin_user_rows(users: list[Users], selected_user_id: int | None = None) -> 
             {
                 "user": item,
                 "card": user_card(item) if item.id == selected_user_id else None,
+                "appointed_text": format_appointment_with_days(item.appointed),
+                "objective_completed_text": days_text(item.objective_completed or 0),
                 "appointed_by": appointed_by_label(item, credentials, telegram_lookup),
                 "profile_url": profile_url(item),
             }
@@ -1915,6 +2012,7 @@ def admin_inactive_request_rows(user_lookup: dict[Any, Users] | None = None) -> 
         start_dt = parse_ru_date(record.start)
         end_dt = parse_ru_date(record.end)
         total_days = (end_dt.date() - start_dt.date()).days + 1
+        inactive_stats = inactive_period_stats(owner)
         rows.append(
             {
                 "id": record.id,
@@ -1927,6 +2025,7 @@ def admin_inactive_request_rows(user_lookup: dict[Any, Users] | None = None) -> 
                 "answers": owner.apa,
                 "penalty": record.w,
                 "created_at": format_datetime(getattr(record, "created_at", None)),
+                **inactive_stats,
             }
         )
     return rows
@@ -1936,6 +2035,7 @@ def build_admin_inactive_request_row(request_record: InactiveRequests, owner: Us
     start_dt = parse_ru_date(request_record.start)
     end_dt = parse_ru_date(request_record.end)
     total_days = (end_dt.date() - start_dt.date()).days + 1
+    inactive_stats = inactive_period_stats(owner)
     return {
         "id": request_record.id,
         "owner": owner,
@@ -1947,6 +2047,7 @@ def build_admin_inactive_request_row(request_record: InactiveRequests, owner: Us
         "answers": owner.apa,
         "penalty": request_record.w,
         "created_at": format_datetime(getattr(request_record, "created_at", None)),
+        **inactive_stats,
     }
 
 
@@ -2130,6 +2231,7 @@ def close_stale_admin_punishment_requests(
     if telegram_lookup is None:
         _, telegram_lookup = build_user_lookups()
     kept_pending_keys: set[tuple[int, str]] = set()
+    active_types_cache: dict[int, set[str]] = {}
     closed_count = 0
     timestamp = now_ts()
     query = (
@@ -2143,9 +2245,9 @@ def close_stale_admin_punishment_requests(
             continue
 
         reason = None
-        active_count = int(getattr(owner, record.punishment, 0) or 0)
+        active_types = active_types_cache.setdefault(owner.id, active_punishment_types(owner))
         pending_key = (owner.id, record.punishment)
-        if active_count <= 0:
+        if record.punishment not in active_types:
             reason = "Автоматически закрыто: наказание уже снято или отсутствует."
         elif pending_key in kept_pending_keys:
             reason = "Автоматически закрыто: дубликат заявки на это наказание."
@@ -2321,6 +2423,7 @@ def admin_punishment_page_rows() -> tuple[list[dict[str, Any]], list[dict[str, A
     close_stale_admin_punishment_requests(telegram_lookup)
     pending_rows: list[dict[str, Any]] = []
     history_rows: list[dict[str, Any]] = []
+    active_types_cache: dict[int, set[str]] = {}
     active_entries: dict[tuple[int, str], PunishmentEntries] = {}
     latest_entries: dict[tuple[int, str], PunishmentEntries] = {}
     for entry in PunishmentEntries.select().order_by(PunishmentEntries.issued_at.desc()):
@@ -2332,6 +2435,11 @@ def admin_punishment_page_rows() -> tuple[list[dict[str, Any]], list[dict[str, A
         row = build_punishment_request_row(record, user_lookup=telegram_lookup)
         owner = row["user"]
         if owner is None or user_scope(owner) != "admins":
+            continue
+        if row["status"] != "pending" and is_auto_closed_punishment_request(record):
+            continue
+        active_types = active_types_cache.setdefault(owner.id, active_punishment_types(owner))
+        if row["status"] == "pending" and record.punishment not in active_types:
             continue
         entry_key = (owner.id, record.punishment)
         entry = active_entries.get(entry_key) or latest_entries.get(entry_key)
@@ -2379,7 +2487,7 @@ async def lifespan(_: FastAPI):
     ensure_bootstrap_invites()
     sync_sheets(composition=True, removed=True, inactives=True)
     bot_task = None
-    if os.getenv("ENABLE_TELEGRAM_BOT") in ("1", None):
+    if os.getenv("ENABLE_TELEGRAM_BOT") in ("1",):
         from Bot import Bot
 
         bot_task = asyncio.create_task(Bot().run())
@@ -3281,8 +3389,11 @@ async def administration_update_user(
     telegram_id: str = Form(""),
     forum: str = Form(""),
     vk: str = Form(""),
+    appointed_at: str = Form(...),
+    promoted_at: str = Form(""),
     apa: int = Form(0),
     objective_completed: int = Form(0),
+    coins: int = Form(0),
     rebuke: int = Form(0),
     warn: int = Form(0),
     verbal: int = Form(0),
@@ -3308,6 +3419,10 @@ async def administration_update_user(
         set_flash(request, "Выберите корректную должность администрации.", "error")
         return redirect(f"/administration/users?user_id={user_id}")
     try:
+        appointed_dt = parse_datetime_local(appointed_at)
+        promoted_dt = parse_datetime_local(promoted_at)
+        if appointed_dt is None:
+            raise ValueError
         target.nickname = nickname.strip()
         target.role = role_value
         target.fraction = None
@@ -3318,13 +3433,16 @@ async def administration_update_user(
         target.telegram_id = parse_optional_int(telegram_id)
         target.forum = forum.strip()
         target.vk = vk.strip()
+        target.appointed = int(appointed_dt.timestamp())
+        target.promoted = int(promoted_dt.timestamp()) if promoted_dt else None
         target.apa = max(apa, 0)
         target.objective_completed = max(objective_completed, 0)
+        target.coins = max(coins, 0)
         target.rebuke = max(rebuke, 0)
         target.warn = max(warn, 0)
         target.verbal = max(verbal, 0)
     except ValueError:
-        set_flash(request, "Проверьте дату рождения и числовые поля.", "error")
+        set_flash(request, "Проверьте даты и числовые поля.", "error")
         return redirect(f"/administration/users?user_id={user_id}")
     target.save()
     sync_sheets(composition=True)
@@ -3968,9 +4086,9 @@ async def management_page(request: Request, scope: str, user_id: int | None = No
     users = sorted(list(scope_queryset(scope)), key=lambda item: scope_sort_key(scope, item))
     if search:
         users = [item for item in users if search.lower() in item.nickname.lower()]
-    support_row_stats = (
-        {item.id: support_management_row_stats(item) for item in users}
-        if scope == "support"
+    row_stats = (
+        {item.id: management_row_stats(item, scope) for item in users}
+        if scope in {"leaders", "support"}
         else {}
     )
     selected = None
@@ -4028,7 +4146,7 @@ async def management_page(request: Request, scope: str, user_id: int | None = No
         selected_card=selected_card,
         selected_active_punishments=active_rows,
         selected_punishment_history=history_rows[:20],
-        support_row_stats=support_row_stats,
+        management_row_stats=row_stats,
         pending_inactive_requests=pending_inactive_requests,
         recent_inactives=recent_inactives,
         removed_rows=removed_rows,
@@ -4633,6 +4751,14 @@ async def review_punishment_request(
     owner = user_by_telegram_value(punishment_request.telegram_id)
     if owner is None:
         set_flash(request, "Пользователь не найден.", "error")
+        return redirect(redirect_url)
+    if punishment_request.punishment not in active_punishment_types(owner):
+        punishment_request.status = "rejected"
+        punishment_request.processed_at = now_ts()
+        punishment_request.reason = "Автоматически закрыто: наказание уже снято или отсутствует."
+        punishment_request.answers_penalty = 0
+        punishment_request.save()
+        set_flash(request, "Заявка больше не актуальна: наказание уже снято или отсутствует.", "error")
         return redirect(redirect_url)
     if decision not in {"approve", "reject"}:
         set_flash(request, "Неизвестное решение по заявке.", "error")
