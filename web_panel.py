@@ -2487,7 +2487,7 @@ async def lifespan(_: FastAPI):
     ensure_bootstrap_invites()
     sync_sheets(composition=True, removed=True, inactives=True)
     bot_task = None
-    if os.getenv("ENABLE_TELEGRAM_BOT") in ("1",):
+    if os.getenv("ENABLE_TELEGRAM_BOT") in ("1", None):
         from Bot import Bot
 
         bot_task = asyncio.create_task(Bot().run())
@@ -4135,6 +4135,30 @@ async def management_page(request: Request, scope: str, user_id: int | None = No
     if selected:
         selected_card = user_card(selected)
         active_rows, history_rows = punishment_entries(selected)
+    credential_rows = {}
+    pending_admin_rows = []
+    if scope == "admins" and users:
+        user_ids = [item.id for item in users]
+        credential_rows = {
+            credential.user_id: credential
+            for credential in WebCredentials.select().where(WebCredentials.user_id << user_ids)
+        }
+        for item in users:
+            credential = credential_rows.get(item.id)
+            if credential and credential.password_hash:
+                continue
+            is_waiting = bool(credential and credential.invite_token)
+            pending_admin_rows.append(
+                {
+                    "user": item,
+                    "credential": credential,
+                    "status": "В ожидание" if is_waiting else "Не активирован",
+                    "status_order": 0 if is_waiting else 1,
+                }
+            )
+        pending_admin_rows.sort(
+            key=lambda row: (row["status_order"], scope_sort_key("admins", row["user"]))
+        )
     return render(
         request,
         "management.html",
@@ -4146,6 +4170,8 @@ async def management_page(request: Request, scope: str, user_id: int | None = No
         selected_card=selected_card,
         selected_active_punishments=active_rows,
         selected_punishment_history=history_rows[:20],
+        credentials=credential_rows,
+        pending_admin_rows=pending_admin_rows,
         management_row_stats=row_stats,
         pending_inactive_requests=pending_inactive_requests,
         recent_inactives=recent_inactives,
@@ -4245,6 +4271,40 @@ async def management_create_user(
     sync_sheets(composition=True)
     set_flash(request, success_text, "success")
     return redirect(f"/management/{scope}?user_id={target.id}")
+
+
+@app.post("/management/admins/users/{user_id}/create-password", name="management_create_admin_password")
+async def management_create_admin_password(
+    request: Request,
+    user_id: int,
+    csrf_token: str = Form(...),
+):
+    actor = require_auth(request)
+    if actor is None:
+        return redirect("/login")
+    if not can_manage_scope(actor, "admins"):
+        return redirect("/dashboard")
+    redirect_url = f"/management/admins?user_id={user_id}"
+    if not validate_csrf(request, csrf_token):
+        set_flash(request, "Сессия формы устарела.", "error")
+        return redirect(redirect_url)
+    target = target_or_none(user_id, "admins")
+    if target is None:
+        set_flash(request, "Администратор не найден.", "error")
+        return redirect("/management/admins")
+
+    credentials, _ = WebCredentials.get_or_create(user=target)
+    if credentials.password_hash:
+        set_flash(request, "У администратора уже создан пароль.", "error")
+        return redirect(redirect_url)
+    credentials.invite_token = generate_token()
+    credentials.invite_created_by = actor.telegram_id
+    credentials.invite_created_at = now_ts()
+    credentials.invite_used_at = None
+    credentials.save()
+    set_generated_link(request, target.nickname, build_invite_url(request, credentials.invite_token))
+    set_flash(request, "Одноразовая ссылка для создания пароля создана.", "success")
+    return redirect(redirect_url)
 
 
 @app.post("/management/{scope}/users/{user_id}/update", name="management_update_user")

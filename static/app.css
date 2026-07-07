@@ -1888,6 +1888,21 @@ textarea {
         max-width: none;
     }
 
+    .table td .norm-list-actions {
+        display: inline-flex;
+        flex-wrap: nowrap;
+        width: fit-content;
+        max-width: 100%;
+        justify-self: start;
+    }
+
+    .table td .norm-list-actions .button,
+    .table td .norm-list-actions .summary-button {
+        flex: 0 0 auto;
+        width: auto;
+        max-width: none;
+    }
+
     .table td form {
         display: block;
     }
@@ -2270,6 +2285,51 @@ textarea {
     min-width: 8.5rem;
 }
 
+.management-row-actions {
+    grid-template-columns: minmax(8.5rem, 1fr) minmax(9.5rem, 1fr);
+    align-items: stretch;
+    min-width: 19rem;
+}
+
+.management-row-actions form {
+    display: grid;
+}
+
+.management-row-actions .button {
+    width: 100%;
+    max-width: none;
+}
+
+.management-row-actions .summary-button {
+    min-width: 0;
+}
+
+.admin-activation-status {
+    display: inline-flex;
+    align-items: center;
+    width: max-content;
+    max-width: 100%;
+    border: 1px solid rgba(35, 24, 15, 0.12);
+    border-radius: 999px;
+    padding: 0.34rem 0.65rem;
+    font-size: 0.84rem;
+    font-weight: 800;
+    line-height: 1.15;
+    white-space: nowrap;
+}
+
+.admin-activation-status.status-pending {
+    color: #8a4f00;
+    background: rgba(217, 143, 36, 0.14);
+    border-color: rgba(217, 143, 36, 0.26);
+}
+
+.admin-activation-status.status-inactive {
+    color: #644f43;
+    background: rgba(35, 24, 15, 0.07);
+    border-color: rgba(35, 24, 15, 0.12);
+}
+
 .management-control-body {
     gap: 1rem;
 }
@@ -2423,6 +2483,11 @@ textarea {
     }
 
     .management-user-table .summary-button {
+        min-width: 0;
+    }
+
+    .management-row-actions {
+        grid-template-columns: 1fr;
         min-width: 0;
     }
 
