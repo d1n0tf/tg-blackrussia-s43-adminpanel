@@ -73,8 +73,14 @@
                             <td data-label="Ответы">{{ item.apa }}</td>
                             <td data-label="Наказания">{{ item.rebuke }} \ {{ item.warn }} \ {{ item.verbal }}</td>
                             <td data-label="Кем назначен">{{ row.appointed_by }}</td>
-                            <td data-label="Управление">
+                            <td data-label="Управление" {% if row.can_create_password %}class="cell-actions management-row-actions"{% endif %}>
                                 <a href="{{ request.url_for('administration_users_page') }}{% if not is_open %}?user_id={{ item.id }}{% endif %}" class="button button-secondary summary-button {% if is_open %}is-open{% endif %}">Управление</a>
+                                {% if row.can_create_password %}
+                                    <form method="post" action="{{ request.url_for('administration_create_admin_password', user_id=item.id) }}">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <button type="submit" class="button button-primary">Создать пароль</button>
+                                    </form>
+                                {% endif %}
                             </td>
                         </tr>
                         {% if is_open %}
@@ -159,6 +165,13 @@
                                                 </div>
                                                 <button type="submit" class="button button-primary">Сохранить</button>
                                             </form>
+                                            {% if row.can_create_password %}
+                                                <form method="post" action="{{ request.url_for('administration_create_admin_password', user_id=item.id) }}" class="panel-subform">
+                                                    <h4>Создать пароль</h4>
+                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                                    <button type="submit" class="button button-primary">Создать пароль</button>
+                                                </form>
+                                            {% endif %}
                                             <form method="post" action="{{ request.url_for('administration_dismiss_user', user_id=item.id) }}" class="panel-subform dismiss-user-form">
                                                 <h4>Снять с должности</h4>
                                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -180,6 +193,60 @@
         </div>
     {% else %}
         <p class="empty-state">Администрации пока нет.</p>
+    {% endif %}
+</section>
+
+<section class="panel-card management-table-panel management-pending-admins">
+    <div class="section-head">
+        <h3>Администраторы без активации</h3>
+        <div class="section-actions">
+            <span>{{ pending_admin_rows|length }} чел.</span>
+        </div>
+    </div>
+
+    {% if pending_admin_rows %}
+        <div class="table-wrap">
+            <table class="table management-user-table">
+                <thead>
+                    <tr>
+                        <th>№</th>
+                        <th>Ник</th>
+                        <th>Должность</th>
+                        <th>Назначен</th>
+                        <th>Ответы</th>
+                        <th>Наказания</th>
+                        <th>Статус</th>
+                        <th>Управление</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in pending_admin_rows %}
+                        {% set item = row.user %}
+                        {% set is_open = selected_user_id == item.id %}
+                        <tr>
+                            <td data-label="№">{{ loop.index }}</td>
+                            <td data-label="Ник">{{ item.nickname }}</td>
+                            <td data-label="Должность"><span class="{{ role_tone_class(item.role) }}">{{ item.role }}</span></td>
+                            <td data-label="Назначен">{{ item.appointed|datetime_display }}</td>
+                            <td data-label="Ответы">{{ item.apa }}</td>
+                            <td data-label="Наказания">{{ item.rebuke }} \ {{ item.warn }} \ {{ item.verbal }}</td>
+                            <td data-label="Статус">
+                                <span class="status-badge admin-activation-status status-{{ 'pending' if row.status_order == 0 else 'inactive' }}">{{ row.status }}</span>
+                            </td>
+                            <td data-label="Управление" class="cell-actions management-row-actions">
+                                <a href="{{ request.url_for('administration_users_page') }}{% if not is_open %}?user_id={{ item.id }}{% endif %}" class="button button-secondary summary-button {% if is_open %}is-open{% endif %}">Управление</a>
+                                <form method="post" action="{{ request.url_for('administration_create_admin_password', user_id=item.id) }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <button type="submit" class="button button-primary">Создать пароль</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">Все администраторы активированы.</p>
     {% endif %}
 </section>
 {% endblock %}

@@ -1971,11 +1971,43 @@ def appointed_by_label(user: Users, credentials: dict[int, WebCredentials], tele
     return creator.nickname if creator else str(creator_id)
 
 
-def admin_user_rows(users: list[Users], selected_user_id: int | None = None) -> list[dict[str, Any]]:
-    credentials = {credential.user_id: credential for credential in WebCredentials.select()}
+def admin_activation_rows(users: list[Users]) -> tuple[dict[int, WebCredentials], list[dict[str, Any]]]:
+    credentials: dict[int, WebCredentials] = {}
+    pending_rows: list[dict[str, Any]] = []
+    user_ids = [item.id for item in users]
+    if user_ids:
+        credentials = {
+            credential.user_id: credential
+            for credential in WebCredentials.select().where(WebCredentials.user_id << user_ids)
+        }
+    for item in users:
+        credential = credentials.get(item.id)
+        if credential and credential.password_hash:
+            continue
+        is_waiting = bool(credential and credential.invite_token)
+        pending_rows.append(
+            {
+                "user": item,
+                "credential": credential,
+                "status": "В ожидание" if is_waiting else "Не активирован",
+                "status_order": 0 if is_waiting else 1,
+            }
+        )
+    pending_rows.sort(key=lambda row: (row["status_order"], scope_sort_key("admins", row["user"])))
+    return credentials, pending_rows
+
+
+def admin_user_rows(
+    users: list[Users],
+    selected_user_id: int | None = None,
+    credentials: dict[int, WebCredentials] | None = None,
+) -> list[dict[str, Any]]:
+    if credentials is None:
+        credentials = {credential.user_id: credential for credential in WebCredentials.select()}
     _, telegram_lookup = build_user_lookups()
     rows: list[dict[str, Any]] = []
     for item in users:
+        credential = credentials.get(item.id)
         rows.append(
             {
                 "user": item,
@@ -1984,6 +2016,8 @@ def admin_user_rows(users: list[Users], selected_user_id: int | None = None) -> 
                 "objective_completed_text": days_text(item.objective_completed or 0),
                 "appointed_by": appointed_by_label(item, credentials, telegram_lookup),
                 "profile_url": profile_url(item),
+                "credential": credential,
+                "can_create_password": not (credential and credential.password_hash),
             }
         )
     return rows
@@ -3293,13 +3327,15 @@ async def administration_users_page(request: Request, user_id: int | None = None
         return redirect("/dashboard")
     admins = sorted(list(scope_queryset("admins")), key=lambda item: scope_sort_key("admins", item))
     selected_user_id = user_id if any(item.id == user_id for item in admins) else None
+    credentials, pending_admin_rows = admin_activation_rows(admins)
     return render(
         request,
         "administration_users.html",
         "Список администрации",
         "administration_users",
-        rows=admin_user_rows(admins, selected_user_id),
+        rows=admin_user_rows(admins, selected_user_id, credentials),
         selected_user_id=selected_user_id,
+        pending_admin_rows=pending_admin_rows,
         role_options=ROLES,
         today=today_str(),
     )
@@ -3374,6 +3410,40 @@ async def administration_create_user(
     sync_sheets(composition=True)
     set_flash(request, "Администратор добавлен. Ссылка ниже одноразовая.", "success")
     return redirect(f"/administration/users?user_id={target.id}")
+
+
+@app.post("/administration/users/{user_id}/create-password", name="administration_create_admin_password")
+async def administration_create_admin_password(
+    request: Request,
+    user_id: int,
+    csrf_token: str = Form(...),
+):
+    actor = require_auth(request)
+    if actor is None:
+        return redirect("/login")
+    if not can_manage_scope(actor, "admins"):
+        return redirect("/dashboard")
+    redirect_url = f"/administration/users?user_id={user_id}"
+    if not validate_csrf(request, csrf_token):
+        set_flash(request, "Сессия формы устарела.", "error")
+        return redirect(redirect_url)
+    target = target_or_none(user_id, "admins")
+    if target is None:
+        set_flash(request, "Администратор не найден.", "error")
+        return redirect("/administration/users")
+
+    credentials, _ = WebCredentials.get_or_create(user=target)
+    if credentials.password_hash:
+        set_flash(request, "У администратора уже создан пароль.", "error")
+        return redirect(redirect_url)
+    credentials.invite_token = generate_token()
+    credentials.invite_created_by = actor.telegram_id
+    credentials.invite_created_at = now_ts()
+    credentials.invite_used_at = None
+    credentials.save()
+    set_generated_link(request, target.nickname, build_invite_url(request, credentials.invite_token))
+    set_flash(request, "Одноразовая ссылка для создания пароля создана.", "success")
+    return redirect(redirect_url)
 
 
 @app.post("/administration/users/{user_id}/update", name="administration_update_user")
@@ -4138,27 +4208,7 @@ async def management_page(request: Request, scope: str, user_id: int | None = No
     credential_rows = {}
     pending_admin_rows = []
     if scope == "admins" and users:
-        user_ids = [item.id for item in users]
-        credential_rows = {
-            credential.user_id: credential
-            for credential in WebCredentials.select().where(WebCredentials.user_id << user_ids)
-        }
-        for item in users:
-            credential = credential_rows.get(item.id)
-            if credential and credential.password_hash:
-                continue
-            is_waiting = bool(credential and credential.invite_token)
-            pending_admin_rows.append(
-                {
-                    "user": item,
-                    "credential": credential,
-                    "status": "В ожидание" if is_waiting else "Не активирован",
-                    "status_order": 0 if is_waiting else 1,
-                }
-            )
-        pending_admin_rows.sort(
-            key=lambda row: (row["status_order"], scope_sort_key("admins", row["user"]))
-        )
+        credential_rows, pending_admin_rows = admin_activation_rows(users)
     return render(
         request,
         "management.html",
