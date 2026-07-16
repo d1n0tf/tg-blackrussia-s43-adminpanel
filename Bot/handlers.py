@@ -45,6 +45,7 @@ from db import (
     InactiveRequests,
     Inactives,
     Objectives,
+    PunishmentEntries,
     PunishmentsRequests,
     Removed,
     Settings_a,
@@ -2794,7 +2795,10 @@ async def punishments_menu_request(query: CallbackQuery, state: FSMContext):
     punishments_chat = Chats.get(Chats.setting == "punishments")
     punishment_short = query.data.split("_")[-1]
     request = PunishmentsRequests.create(
-        telegram_id=query.from_user.id, punishment=punishment_short
+        telegram_id=str(query.from_user.id),
+        punishment=punishment_short,
+        status="pending",
+        created_at=int(time.time()),
     )
     punishment = {
         "rebuke": "Выговор",
@@ -2937,11 +2941,31 @@ async def punishment_request_(query: CallbackQuery, state: FSMContext):
     req_id = int(query.message.text.replace("📗 [#", "").split("]")[0])
     req = PunishmentsRequests.get_by_id(req_id)
     if "decline" not in query.data.split(":")[-1].split("_"):
-        user = Users.get(Users.telegram_id == str(req.telegram_id))
+        user = Users.get(Users.telegram_id == int(req.telegram_id))
         setattr(user, req.punishment, max(getattr(user, req.punishment) - 1, 0))
         user.save()
-
         admin = Users.get(Users.telegram_id == query.from_user.id)
+        req.status = "approved"
+        req.processed_by = admin.telegram_id
+        req.processed_at = int(time.time())
+        req.answers_penalty = req.answers_penalty or 0
+        req.save()
+        entry = (
+            PunishmentEntries.select()
+            .where(
+                PunishmentEntries.user == user,
+                PunishmentEntries.punishment_type == req.punishment,
+                PunishmentEntries.removed_at.is_null(True),
+            )
+            .order_by(PunishmentEntries.issued_at.asc())
+            .first()
+        )
+        if entry is not None:
+            entry.removed_at = int(time.time())
+            entry.removed_by = admin.telegram_id
+            entry.removed_reason = "Снято по заявке (Telegram)"
+            entry.save()
+
         _punishment = {
             "rebuke": "Выговор",
             "warn": "Предупреждение",
@@ -2956,7 +2980,7 @@ async def punishment_request_(query: CallbackQuery, state: FSMContext):
         )
         try:
             await query.bot.send_message(
-                chat_id=req.telegram_id,
+                chat_id=int(req.telegram_id),
                 text=f'📗 Администратор <a href="tg://user?id={admin.telegram_id}">{admin.nickname}</a> одобрил заявление на снятие "<code>{_punishment}</code>".',
             )
         except Exception:
@@ -2988,6 +3012,12 @@ async def punishments_menu_reason(message: Message, state: FSMContext):
     admin = Users.get(Users.telegram_id == message.from_user.id)
     query: CallbackQuery = (await state.get_data())["original_query"]
     request = (await state.get_data())["prequest"]
+    request.status = "rejected"
+    request.processed_by = admin.telegram_id
+    request.processed_at = int(time.time())
+    request.reason = message.text
+    request.answers_penalty = 0
+    request.save()
     await query.message.edit_text(
         query.message.html_text
         + f"""\n
@@ -3002,7 +3032,7 @@ async def punishments_menu_reason(message: Message, state: FSMContext):
             "verbal": "Устное предупреждение",
         }[str(request.punishment)]
         await message.bot.send_message(
-            chat_id=request.telegram_id,
+            chat_id=int(request.telegram_id),
             text=f'📕 Администратор <a href="tg://user?id={admin.telegram_id}">{admin.nickname}</a> отказал заявление на снятие "<code>{_punishment}</code>" по причине "{message.text}".',
         )
     except Exception:

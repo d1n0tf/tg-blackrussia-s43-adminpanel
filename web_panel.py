@@ -587,7 +587,7 @@ def count_actionable_punishment_requests_for_admins(admin_lookup: dict[str, User
     active_types_cache: dict[int, set[str]] = {}
     for record in (
         PunishmentsRequests.select()
-        .where(PunishmentsRequests.status == "pending")
+        .where(pending_punishment_status_clause())
         .order_by(PunishmentsRequests.id.desc())
     ):
         owner = admin_lookup.get(str(record.telegram_id))
@@ -1520,10 +1520,19 @@ def active_punishment_types(user: Users) -> set[str]:
     return {row["type_key"] for row in active}
 
 
+def punishment_request_status(record: PunishmentsRequests) -> str:
+    """Bot-created rows often have NULL status; treat that as pending."""
+    return (getattr(record, "status", None) or "pending").strip() or "pending"
+
+
+def pending_punishment_status_clause():
+    return (PunishmentsRequests.status == "pending") | (PunishmentsRequests.status.is_null(True))
+
+
 def is_auto_closed_punishment_request(record: PunishmentsRequests) -> bool:
     reason = (getattr(record, "reason", None) or "").strip()
     return (
-        (getattr(record, "status", None) or "pending") == "rejected"
+        punishment_request_status(record) == "rejected"
         and reason.startswith(AUTO_CLOSED_PUNISHMENT_PREFIX)
     )
 
@@ -1714,7 +1723,7 @@ def build_punishment_request_row(
         "id": record.id,
         "user": owner,
         "punishment_type": PUNISHMENT_LABELS.get(record.punishment, record.punishment),
-        "status": getattr(record, "status", "pending") or "pending",
+        "status": punishment_request_status(record),
         "reason": reason or "-",
         "answers_penalty": answers_penalty or 0,
         "processed_at": format_datetime(getattr(record, "processed_at", None)),
@@ -1855,7 +1864,7 @@ def close_pending_user_requests(user: Users, actor: Users, reason: str) -> None:
         )
         .where(
             PunishmentsRequests.telegram_id == str(user.telegram_id),
-            PunishmentsRequests.status == "pending",
+            pending_punishment_status_clause(),
         )
         .execute()
     )
@@ -2273,7 +2282,7 @@ def close_stale_admin_punishment_requests(
     timestamp = now_ts()
     query = (
         PunishmentsRequests.select()
-        .where(PunishmentsRequests.status == "pending")
+        .where(pending_punishment_status_clause())
         .order_by(PunishmentsRequests.id.desc())
     )
     for record in query:
@@ -2290,6 +2299,10 @@ def close_stale_admin_punishment_requests(
             reason = "Автоматически закрыто: дубликат заявки на это наказание."
         else:
             kept_pending_keys.add(pending_key)
+            # Normalize legacy NULL status so review/count paths stay consistent.
+            if record.status is None:
+                record.status = "pending"
+                record.save()
             continue
 
         record.status = "rejected"
@@ -3240,7 +3253,7 @@ async def punishments_page(request: Request, requests_page: int = 1, history_pag
         PunishmentsRequests.select()
         .where(
             PunishmentsRequests.telegram_id == str(user.telegram_id),
-            PunishmentsRequests.status == "pending",
+            pending_punishment_status_clause(),
         )
         .order_by(PunishmentsRequests.id.desc())
     )
@@ -3298,10 +3311,14 @@ async def create_punishment_request(
     if getattr(user, punishment_type) <= 0:
         set_flash(request, "У вас нет такого активного наказания.", "error")
         return redirect("/punishments")
-    existing_request = PunishmentsRequests.get_or_none(
-        PunishmentsRequests.telegram_id == str(user.telegram_id),
-        PunishmentsRequests.punishment == punishment_type,
-        PunishmentsRequests.status == "pending",
+    existing_request = (
+        PunishmentsRequests.select()
+        .where(
+            PunishmentsRequests.telegram_id == str(user.telegram_id),
+            PunishmentsRequests.punishment == punishment_type,
+            pending_punishment_status_clause(),
+        )
+        .first()
     )
     if existing_request is not None:
         set_flash(
@@ -4858,7 +4875,7 @@ async def review_punishment_request(
         set_flash(request, "Сессия формы устарела.", "error")
         return redirect(redirect_url)
     punishment_request = PunishmentsRequests.get_or_none(PunishmentsRequests.id == request_id)
-    if punishment_request is None or punishment_request.status != "pending":
+    if punishment_request is None or punishment_request_status(punishment_request) != "pending":
         set_flash(request, "Заявка уже обработана или не найдена.", "error")
         return redirect(redirect_url)
     owner = user_by_telegram_value(punishment_request.telegram_id)
