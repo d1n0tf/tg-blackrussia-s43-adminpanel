@@ -1252,8 +1252,11 @@ def norm_check_admin_rows(check: NormativeChecks | None = None) -> list[dict[str
         .order_by(NormativeCheckEntries.order_index, NormativeCheckEntries.id)
     )
     for entry in entries:
+        # Skip historical entries whose user was removed from DB.
+        if Users.get_or_none(Users.id == entry.user_id) is None:
+            continue
         rows.append(norm_check_form_row_from_entry(entry, check))
-        seen_ids.add(entry.user.id)
+        seen_ids.add(entry.user_id)
     for admin in current_admins:
         if admin.id not in seen_ids:
             rows.append(default_norm_check_form_row(admin, len(rows) + 1))
