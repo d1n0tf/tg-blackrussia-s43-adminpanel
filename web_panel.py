@@ -2576,15 +2576,13 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 @app.middleware("http")
 async def db_session_middleware(request: Request, call_next):
+    # Keep the main-thread connection open: bot polling and web handlers share the
+    # same asyncio thread. Closing after every request races with bot/sheets DB use
+    # and amplifies SQLite "database is locked" errors.
     if dbhandle.is_closed():
         dbhandle.connect(reuse_if_open=True)
     request.state.user = None
-    try:
-        response = await call_next(request)
-    finally:
-        if not dbhandle.is_closed():
-            dbhandle.close()
-    return response
+    return await call_next(request)
 
 
 @app.get("/", name="home")
@@ -2819,10 +2817,22 @@ async def profile_dismiss_user(
     if not validate_csrf(request, csrf_token):
         set_flash(request, "Сессия формы устарела.", "error")
         return redirect(profile_url(target))
-    create_removed_entry(target, actor, reason.strip())
-    WebCredentials.delete().where(WebCredentials.user == target).execute()
-    Inactives.delete().where(Inactives.nickname == target.nickname).execute()
-    target.delete_instance()
+    try:
+        with dbhandle.atomic():
+            create_removed_entry(target, actor, reason.strip())
+            close_pending_user_requests(target, actor, "Пользователь снят с должности.")
+            close_active_punishment_entries(target, actor, reason.strip() or "Снятие с должности")
+            WebCredentials.delete().where(WebCredentials.user == target).execute()
+            Inactives.delete().where(Inactives.nickname == target.nickname).execute()
+            # Drop dependent rows that would block user delete under FK/orphans.
+            PunishmentEntries.delete().where(PunishmentEntries.user == target).execute()
+            Reports.delete().where(Reports.user == target).execute()
+            NormativeCheckEntries.delete().where(NormativeCheckEntries.user == target).execute()
+            target.delete_instance()
+    except Exception:
+        logger.exception("Failed to dismiss user id={}", user_id)
+        set_flash(request, "Не удалось снять пользователя: база занята или ошибка записи. Попробуйте ещё раз.", "error")
+        return redirect(profile_url(target))
     sync_sheets(composition=True, removed=True, inactives=True)
     set_flash(request, "Пользователь снят с должности.", "success")
     return redirect("/dashboard")

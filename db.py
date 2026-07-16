@@ -6,13 +6,51 @@ from peewee import (
     ForeignKeyField,
     IntegerField,
     Model,
+    OperationalError,
     SqliteDatabase,
     TextField,
 )
 
 from config import DATABASE
 
-dbhandle = SqliteDatabase(DATABASE)
+# Bot (asyncio) + web requests + sheets worker thread all hit the same file.
+# WAL + busy_timeout greatly reduce "database is locked" under concurrent access.
+_SQLITE_TIMEOUT_SEC = 30
+_SQLITE_BUSY_MS = 30_000
+_LOCK_RETRIES = 8
+_LOCK_RETRY_BASE_DELAY = 0.05
+
+
+class RetrySqliteDatabase(SqliteDatabase):
+    """Retry writes/reads when SQLite reports a transient lock."""
+
+    def execute_sql(self, sql, params=None):
+        last_error: OperationalError | None = None
+        for attempt in range(_LOCK_RETRIES):
+            try:
+                return super().execute_sql(sql, params=params)
+            except OperationalError as exc:
+                message = str(exc).lower()
+                if "locked" not in message and "busy" not in message:
+                    raise
+                last_error = exc
+                if attempt + 1 >= _LOCK_RETRIES:
+                    break
+                time.sleep(_LOCK_RETRY_BASE_DELAY * (2**attempt))
+        assert last_error is not None
+        raise last_error
+
+
+dbhandle = RetrySqliteDatabase(
+    DATABASE,
+    timeout=_SQLITE_TIMEOUT_SEC,
+    pragmas={
+        "journal_mode": "WAL",
+        "busy_timeout": _SQLITE_BUSY_MS,
+        "synchronous": "NORMAL",
+        "temp_store": "MEMORY",
+    },
+)
 
 
 def current_timestamp() -> int:
@@ -359,6 +397,10 @@ def ensure_index(index_name: str, table_name: str, columns: str) -> None:
 
 def init_db() -> None:
     dbhandle.connect(reuse_if_open=True)
+    # Re-apply pragmas in case an older process left the file in DELETE journal mode.
+    dbhandle.execute_sql(f"PRAGMA busy_timeout = {_SQLITE_BUSY_MS}")
+    dbhandle.execute_sql("PRAGMA journal_mode = WAL")
+    dbhandle.execute_sql("PRAGMA synchronous = NORMAL")
     dbhandle.create_tables(ALL_MODELS)
     ensure_columns(
         "forms",
